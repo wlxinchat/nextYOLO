@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import math
 import random
 import time
@@ -21,6 +22,9 @@ from ..loss.loss import DetectionLoss, LossConfig
 from ..nn.model import ModelConfig, NextYOLO
 from ..optim.musgd import MuSGD
 from .evaluator import evaluate
+
+
+STOPPED_EXIT_CODE = 3  # process exit code for a graceful, resumable stop (see NEXTYOLO_STOP_FILE)
 
 
 @dataclass
@@ -282,6 +286,10 @@ class Trainer:
                 history=self.history, best=best, best_metrics=best_metrics, last_step=last_step,
                 hours=(time.time() - t_start) / 3600))
             (self.out / "history.json").write_text(json.dumps(self.history, indent=1))
+            stop = os.environ.get("NEXTYOLO_STOP_FILE")
+            if stop and Path(stop).exists() and epoch + 1 < cfg.epochs:
+                self.log("stop requested: exiting after the epoch checkpoint (run is resumable)")
+                raise SystemExit(STOPPED_EXIT_CODE)
             if out_of_time:
                 self.log("time limit reached")
                 break

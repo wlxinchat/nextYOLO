@@ -54,6 +54,9 @@ def main():
             if not hasattr(cfg, k):
                 raise KeyError(k)
             setattr(cfg, k, v)
+    if cfg.resume and (Path(cfg.out) / "summary.json").exists():
+        print(f"{cfg.out}: run already complete; nothing to do")
+        return
     Trainer(cfg).train()
 
 

@@ -38,6 +38,15 @@ class _Wrap(nn.Module):
         return torch.cat((xy - wh, xy + wh, y[..., 4:]), -1)
 
 
+def _stop_if_requested(trainer) -> None:
+    """After Ultralytics saves last.pt, exit if NEXTYOLO_STOP_FILE exists (graceful, resumable stop)."""
+    import os
+    stop = os.environ.get("NEXTYOLO_STOP_FILE")
+    if stop and Path(stop).exists() and trainer.epoch + 1 < trainer.epochs:
+        print("stop requested: exiting after the epoch checkpoint (run is resumable)", flush=True)
+        raise SystemExit(3)
+
+
 def _resumable(path: Path) -> bool:
     """True if an Ultralytics checkpoint is from an unfinished run (finished runs drop the optimizer state)."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
@@ -84,10 +93,13 @@ def main():
     if a.eval_only:
         weights = a.eval_only
     elif last.exists() and _resumable(last):  # interrupted run: Ultralytics resumes from its own full checkpoint
-        YOLO(str(last)).train(resume=True)
+        model = YOLO(str(last))
+        model.add_callback("on_model_save", _stop_if_requested)
+        model.train(resume=True)
         weights = last
     else:
         model = YOLO(a.model)
+        model.add_callback("on_model_save", _stop_if_requested)
         model.train(data=str(yaml_path), imgsz=a.imgsz, epochs=a.epochs, batch=a.batch, device="cpu",
                     workers=a.workers, optimizer=a.optimizer, lr0=a.lr0, warmup_epochs=a.warmup_epochs,
                     close_mosaic=a.close_mosaic, cache="ram", amp=False, plots=False, val=False, seed=0,

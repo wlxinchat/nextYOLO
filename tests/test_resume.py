@@ -55,3 +55,22 @@ def test_resume_after_interruption(tmp_path, monkeypatch):
     assert "closing mosaic" in log and summary["best_mAP"] >= 0
     Trainer(TrainConfig(**cfg)).train()
     assert "nothing to do" in (tmp_path / "run" / "log.txt").read_text()
+
+
+def test_stop_file_exits_resumably(tmp_path, monkeypatch):
+    from nextyolo.engine.trainer import STOPPED_EXIT_CODE
+
+    train, val = _synthetic_dataset(tmp_path / "data")
+    cfg = dict(train=train, val=val, names=["a", "b"], out=str(tmp_path / "run"), epochs=2, batch=4, imgsz=64,
+               workers=0, warmup_epochs=0, close_mosaic=0, eval_interval=1)
+    stop = tmp_path / "STOP"
+    stop.touch()
+    monkeypatch.setenv("NEXTYOLO_STOP_FILE", str(stop))
+    with pytest.raises(SystemExit) as e:
+        Trainer(TrainConfig(**cfg)).train()
+    assert e.value.code == STOPPED_EXIT_CODE
+    assert not (tmp_path / "run" / "summary.json").exists()
+    stop.unlink()
+    Trainer(TrainConfig(**cfg)).train()
+    assert (tmp_path / "run" / "summary.json").exists()
+    assert "after epoch 1" in (tmp_path / "run" / "log.txt").read_text()

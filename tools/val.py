@@ -50,6 +50,9 @@ def main():
     ap.add_argument("--max_images", type=int, default=None)
     ap.add_argument("--out", default=None, help="write metrics JSON here")
     a = ap.parse_args()
+    if a.out and Path(a.out).exists():
+        print(f"{a.out} exists; nothing to do")
+        return
     if a.threads:
         torch.set_num_threads(a.threads)
 
