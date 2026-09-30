@@ -23,6 +23,7 @@ epochs, EMA, seed 0.
 | Ultralytics YOLO26n (reference implementation) | **22.02** | **36.97** | **24.95** | **42.19** | done |
 | nextYOLO-n, recipe v1 | 21.15 | 35.25 | 24.71 | 41.46 | done |
 | **nextYOLO-n, recipe v2** (+3× cls-head lr under MuSGD, as Ultralytics does) | **21.99** | **36.76** | **24.99** | **41.79** | done |
+| nextYOLO-n, recipe v2, seed 1 | 22.16 | 37.33 | 25.05 | 42.33 | done |
 
 Recipe v1 matched the reference on the NMS branch (−0.24 AP) but trailed on the NMS-free branch (−0.87 AP).
 Re-reading the reference optimiser code showed that Ultralytics trains both classification heads at 3× lr whenever
@@ -35,12 +36,18 @@ outputs to 2.4e-4 — this establishes nextYOLO as a faithful YOLO26 implementat
 the training-recipe level. The 3× cls-head lr alone was worth +0.84 AP on the NMS-free branch. Recipe v2 is the
 baseline for all later from-scratch ablations.
 
+**Noise level:** two seeds of recipe v2 differ by 0.17 AP e2e and 0.06 AP o2m+NMS. Their mean is 22.08 AP e2e and
+25.02 AP o2m+NMS; Ultralytics scores 22.02 and 24.95. Below we treat differences under ~0.3 AP as noise.
+
 ## B. Levers on top of YOLO26 (from scratch, same setting as A)
 
-| lever | AP e2e @ epoch 6 | Δ vs v1 baseline @ epoch 6 | final | status |
-|---|---|---|---|---|
-| baseline (recipe v1) | 11.38 | — | 21.15 | done |
-| **AOA** — o2o positive = top-1 of the o2m ranking (new) | 8.87 | **−2.51** | stopped at half schedule | negative |
+| lever | AP e2e @ epoch 6 | AP e2e final | AP o2m+NMS final | Δ e2e vs baseline | verdict |
+|---|---|---|---|---|---|
+| baseline, recipe v1 | 11.38 | 21.15 | 24.71 | — | |
+| **AOA** — o2o positive = top-1 of the o2m ranking (new; vs v1) | 8.87 | stopped at epoch 6 | — | **−2.51** @ epoch 6 | negative |
+| baseline, recipe v2 (mean of 2 seeds) | 12.27 | 22.08 | 25.02 | — | |
+| **MAL** for the o2o branch (DEIM's matchability-aware loss; vs v2) | 9.84 | 18.02 | 24.46 | **−4.06** | negative |
+| YOLO27-style dual-scale head, P3+P5 (vs v2) | | | | | queued |
 
 **AOA is a negative result.** Forcing the one-to-one head to fire where the *one-to-many* head ranks best was 2.5 AP
 worse at half schedule; only AP_S improved (3.12 vs 1.99). The likely explanation: with self-assignment
@@ -48,6 +55,13 @@ worse at half schedule; only AP_S improved (3.12 vs 1.99). The likely explanatio
 choice reinforces itself. AOA picks anchors where the o2o box is still poor, which lowers the IoU-aware targets and
 contradicts the head's own ranking. The comparison is at equal schedule position (same LR schedule, both evaluated at
 epoch 6); the run was not continued, to save compute.
+
+**MAL is also a negative result for dense NMS-free heads** (−4.1 AP e2e, −0.6 AP o2m+NMS). MAL down-weights negatives
+by p^γ, focal-style. In a dense one-to-one head, the hardest negatives are the near-duplicate neighbours of each
+positive, and suppressing them is exactly what makes the head NMS-free, so weakening their gradient leaves
+duplicates. In DEIM's DETR decoder, query self-attention does the de-duplication, so MAL's weighting there is harmless
+or even useful. The loss is only 0.6 AP on the dense branch, where NMS removes duplicates, which supports this
+explanation.
 
 ## C. Transfer from COCO-pretrained YOLO26 (the practical regime)
 
@@ -62,15 +76,16 @@ budget), 0.5 warmup epochs, and mosaic off for the last epoch.
 | YOLO26s COCO weights, zero-shot (distillation teacher) | 65.45 | 83.52 | — | — | done |
 | Ultralytics fine-tune of yolo26n.pt (its trainer; cls heads re-initialised for 20 classes) | 47.67 | 65.79 | 54.55 | 75.28 | done |
 | **nextYOLO fine-tune, class-subset head init** | **56.96** | **76.95** | **58.08** | **78.41** | done |
-| nextYOLO fine-tune, re-initialised cls heads (isolates the head-init effect) | | | | | queued |
+| nextYOLO fine-tune, re-initialised cls heads (isolates the head-init effect) | 49.22 | 67.83 | 55.40 | 76.12 | done |
 | nextYOLO fine-tune + dense distillation from YOLO26s (o2o assignment: self) | 52.44 | 71.95 | 57.06 | 77.66 | done |
 | nextYOLO fine-tune + dense distillation, o2o assignment follows the teacher | 50.49 | 68.32 | 57.03 | 77.69 | done |
 | nextYOLO fine-tune + distillation of the o2m branch only | | | | | queued |
 
 Under the same 3-epoch budget, **class-subset head transfer beats standard fine-tuning by +9.3 AP e2e and +3.5 AP
-o2m+NMS.** The gain is largest for the NMS-free branch: a re-initialised o2o head has to relearn "exactly one anchor
-per object" from scratch. The re-initialised-head nextYOLO run separates the head-init effect from other
-implementation differences.
+o2m+NMS.** Within nextYOLO alone, the head initialisation accounts for **+7.7 AP e2e and +2.7 AP o2m+NMS** (56.96 vs
+49.22, 58.08 vs 55.40). The rest (+1.5 / +0.9) comes from differences between the two trainers in this fine-tuning
+setting, within the range expected for 3-epoch runs. The gain is largest for the NMS-free branch: a re-initialised
+o2o head has to relearn "exactly one anchor per object" from scratch, while the sliced head keeps it.
 
 Fine-tuning curve (e2e AP by epoch): 50.47 → 53.70 → 56.96. The first epoch of mosaic-augmented fine-tuning drops
 6 AP below the zero-shot start before recovering. At this budget, fine-tuning only just beats zero-shot (+0.4 AP).
