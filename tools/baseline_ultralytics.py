@@ -39,11 +39,13 @@ class _Wrap(nn.Module):
 
 
 def _stop_if_requested(trainer) -> None:
-    """After Ultralytics saves last.pt, exit if NEXTYOLO_STOP_FILE exists (graceful, resumable stop)."""
-    import os
-    stop = os.environ.get("NEXTYOLO_STOP_FILE")
-    if stop and Path(stop).exists() and trainer.epoch + 1 < trainer.epochs:
-        print("stop requested: exiting after the epoch checkpoint (run is resumable)", flush=True)
+    """After Ultralytics saves last.pt, exit (resumably) on NEXTYOLO_STOP_FILE or if the next epoch would overrun
+    NEXTYOLO_DEADLINE — same policy as nextYOLO's trainer."""
+    import time
+
+    from nextyolo.engine.trainer import should_pause
+    if trainer.epoch + 1 < trainer.epochs and should_pause(time.time() - trainer.epoch_time_start):
+        print("pausing after the epoch checkpoint (stop file or deadline; run is resumable)", flush=True)
         raise SystemExit(3)
 
 

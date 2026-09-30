@@ -74,3 +74,16 @@ def test_stop_file_exits_resumably(tmp_path, monkeypatch):
     Trainer(TrainConfig(**cfg)).train()
     assert (tmp_path / "run" / "summary.json").exists()
     assert "after epoch 1" in (tmp_path / "run" / "log.txt").read_text()
+
+
+def test_deadline_pauses_before_an_epoch_that_would_not_fit(monkeypatch):
+    import time
+
+    from nextyolo.engine.trainer import should_pause
+
+    monkeypatch.delenv("NEXTYOLO_STOP_FILE", raising=False)
+    monkeypatch.setenv("NEXTYOLO_DEADLINE", str(time.time() + 600))
+    assert not should_pause(100)   # 110 s + 60 s margin fits in 600 s
+    assert should_pause(500)       # 550 s + 60 s does not
+    monkeypatch.delenv("NEXTYOLO_DEADLINE")
+    assert not should_pause(10**6)

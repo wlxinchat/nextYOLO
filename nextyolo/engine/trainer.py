@@ -27,6 +27,16 @@ from .evaluator import evaluate
 STOPPED_EXIT_CODE = 3  # process exit code for a graceful, resumable stop (see NEXTYOLO_STOP_FILE)
 
 
+def should_pause(epoch_seconds: float) -> bool:
+    """True if NEXTYOLO_STOP_FILE exists, or if another epoch of this length would overrun NEXTYOLO_DEADLINE
+    (unix time). Lets a job scheduler split long runs into bounded segments without losing partial epochs."""
+    stop = os.environ.get("NEXTYOLO_STOP_FILE")
+    if stop and Path(stop).exists():
+        return True
+    deadline = os.environ.get("NEXTYOLO_DEADLINE")
+    return bool(deadline) and time.time() + 1.1 * epoch_seconds + 60 > float(deadline)
+
+
 @dataclass
 class TrainConfig:
     train: list = field(default_factory=list)   # image dirs / list files
@@ -309,9 +319,8 @@ class Trainer:
                 history=self.history, best=best, best_metrics=best_metrics, last_step=last_step,
                 hours=(time.time() - t_start) / 3600))
             (self.out / "history.json").write_text(json.dumps(self.history, indent=1))
-            stop = os.environ.get("NEXTYOLO_STOP_FILE")
-            if stop and Path(stop).exists() and epoch + 1 < cfg.epochs:
-                self.log("stop requested: exiting after the epoch checkpoint (run is resumable)")
+            if epoch + 1 < cfg.epochs and should_pause(time.time() - t_ep):
+                self.log("pausing after the epoch checkpoint (stop file or deadline; run is resumable)")
                 raise SystemExit(STOPPED_EXIT_CODE)
             if out_of_time:
                 self.log("time limit reached")
