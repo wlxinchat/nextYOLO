@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import torch
 import torch.nn as nn
@@ -139,7 +139,6 @@ class NextYOLO(nn.Module):
         self.layers = nn.ModuleList(layers[i] for i in range(len(spec)))
         self.order = order
         self.save = {x for m in self.layers for x in (m.f if isinstance(m.f, list) else [m.f])}
-        self.head: DetectHead = self.layers[-1]
         self._init_weights()
         self._init_strides()
         self.head.bias_init()
@@ -171,6 +170,10 @@ class NextYOLO(nn.Module):
         out = self.forward(torch.zeros(1, 3, s, s))
         self.head.stride.copy_(torch.tensor([s / h for h, _ in out["shapes"]]))
         self.train(was_training)
+
+    @property
+    def head(self) -> DetectHead:
+        return self.layers[-1]
 
     @property
     def stride(self) -> torch.Tensor:
@@ -226,3 +229,26 @@ def gflops(model: nn.Module, imgsz: int = 640) -> float:
     for h in hooks:
         h.remove()
     return 2 * macs / 1e9
+
+
+@torch.no_grad()
+def subset_classes(model: NextYOLO, keep: list[int]) -> NextYOLO:
+    """Return a copy whose classification heads predict only `keep` (in that order).
+
+    Rows of the final 1x1 cls convs are sliced, so a detector pretrained on a superset of classes (e.g. COCO)
+    transfers to a subset task (e.g. VOC) with its class knowledge intact — usable zero-shot or as a fine-tuning init.
+    """
+    new = copy.deepcopy(model)
+    idx = torch.tensor(keep)
+    for heads in (new.head.cls, getattr(new.head, "o2o_cls", None)):
+        if heads is None:
+            continue
+        for seq in heads:
+            old = seq[-1]
+            conv = nn.Conv2d(old.in_channels, len(keep), 1).to(old.weight.device, old.weight.dtype)
+            conv.weight.copy_(old.weight[idx])
+            conv.bias.copy_(old.bias[idx])
+            seq[-1] = conv
+    new.head.nc = len(keep)
+    new.cfg = replace(new.cfg, nc=len(keep))
+    return new

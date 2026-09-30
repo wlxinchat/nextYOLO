@@ -261,6 +261,7 @@ def load_model(path: str) -> NextYOLO:
     ck = torch.load(path, map_location="cpu", weights_only=False)
     cfg = ModelConfig(**{k: (tuple(v) if k == "levels" else v) for k, v in ck["model_cfg"].items()})
     model = NextYOLO(cfg)
-    model.load_state_dict(ck["ema"])
+    # older checkpoints also carried the head under a duplicate "head." prefix
+    model.load_state_dict({k: v for k, v in ck["ema"].items() if not k.startswith("head.")})
     model.names = ck.get("names")
     return model.eval()
