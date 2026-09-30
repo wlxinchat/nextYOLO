@@ -38,6 +38,12 @@ class _Wrap(nn.Module):
         return torch.cat((xy - wh, xy + wh, y[..., 4:]), -1)
 
 
+def _resumable(path: Path) -> bool:
+    """True if an Ultralytics checkpoint is from an unfinished run (finished runs drop the optimizer state)."""
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    return ck.get("optimizer") is not None and ck.get("epoch", -1) >= 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True)
@@ -71,8 +77,15 @@ def main():
         f"path: {spec['root']}\ntrain: {json.dumps(spec['train'])}\nval: {json.dumps(spec['val'])}\n"
         f"names: {json.dumps(dict(enumerate(spec['names'])))}\n")
 
+    last = out / "train" / "weights" / "last.pt"
+    if (out / "eval_nextyolo_metric.json").exists() and not a.eval_only:
+        print("run already complete; nothing to do")
+        return
     if a.eval_only:
         weights = a.eval_only
+    elif last.exists() and _resumable(last):  # interrupted run: Ultralytics resumes from its own full checkpoint
+        YOLO(str(last)).train(resume=True)
+        weights = last
     else:
         model = YOLO(a.model)
         model.train(data=str(yaml_path), imgsz=a.imgsz, epochs=a.epochs, batch=a.batch, device="cpu",

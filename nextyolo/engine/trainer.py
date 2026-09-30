@@ -59,6 +59,7 @@ class TrainConfig:
     init: str | None = None        # start from a checkpoint (nextYOLO .pt or Ultralytics YOLO26 .pt)
     init_head: str = "subset"      # "subset": slice cls heads to our classes by name; "random": re-init cls heads
     compile: bool = False          # torch.compile the training forward (+~25% CPU throughput)
+    resume: bool = True            # continue from <out>/last.pt if it holds a full training state
     channels_last: bool = True
 
 
@@ -152,7 +153,8 @@ class Trainer:
         t0 = time.time()
         self.train_set = YOLODataset(cfg.train, cfg.imgsz, train=True, hyp=cfg.hyp,
                                      max_images=cfg.max_train_images)
-        self.val_set = YOLODataset(cfg.val, cfg.imgsz, train=False) if cfg.val else None
+        self.val_set = (YOLODataset(cfg.val, cfg.imgsz, train=False, max_images=cfg.eval_max_images)
+                        if cfg.val else None)
         self.log(f"datasets cached in {time.time() - t0:.0f}s: train {len(self.train_set)} "
                  f"val {len(self.val_set) if self.val_set else 0}")
         self.loader = self._loader()
@@ -186,15 +188,35 @@ class Trainer:
     def lr_factor(self, epoch: float) -> float:
         return (1 - epoch / self.cfg.epochs) * (1.0 - self.cfg.lrf) + self.cfg.lrf  # linear decay
 
+    def _try_resume(self) -> tuple[int, float, dict, int, float]:
+        """Restore full state from <out>/last.pt. Returns (start_epoch, best, best_metrics, last_step, hours)."""
+        path = self.out / "last.pt"
+        if not (self.cfg.resume and path.exists()):
+            return 0, -1.0, {}, -1, 0.0
+        ck = torch.load(path, map_location="cpu", weights_only=False)
+        if "optimizer" not in ck:  # EMA-only checkpoint from an older version: cannot resume exactly
+            self.log(f"{path} has no optimizer state; starting from scratch")
+            return 0, -1.0, {}, -1, 0.0
+        self.model.load_state_dict(ck["model"])
+        self.ema.ema.load_state_dict(ck["ema"])
+        self.ema.updates = ck["ema_updates"]
+        self.opt.load_state_dict(ck["optimizer"])
+        self.history = ck["history"]
+        self.log(f"resumed from {path} after epoch {ck['epoch'] + 1}")
+        return ck["epoch"] + 1, ck["best"], ck["best_metrics"], ck["last_step"], ck["hours"]
+
     def train(self) -> dict:
         cfg = self.cfg
+        if cfg.resume and (self.out / "summary.json").exists():
+            self.log("run already complete; nothing to do")
+            return json.loads((self.out / "summary.json").read_text())
         nb = len(self.loader)
         nw = round(min(cfg.warmup_epochs, max(cfg.epochs - 1, 0)) * nb) if cfg.warmup_epochs > 0 else 0
-        best, last_step, t_start = -1.0, -1, time.time()
-        best_metrics: dict = {}
-        for epoch in range(cfg.epochs):
+        start_epoch, best, best_metrics, last_step, prev_hours = self._try_resume()
+        t_start = time.time() - prev_hours * 3600
+        for epoch in range(start_epoch, cfg.epochs):
             self.criterion.set_epoch(epoch)
-            if epoch == cfg.epochs - cfg.close_mosaic:
+            if epoch >= cfg.epochs - cfg.close_mosaic and self.train_set.hyp["mosaic"] > 0:
                 self.train_set.hyp["mosaic"] = 0.0
                 self.loader = self._loader()  # restart workers so they see the new hyp
                 self.log("closing mosaic")
@@ -255,7 +277,10 @@ class Trainer:
                     self.save("best.pt", epoch)
             self.history.append(rec)
             self.log(f"epoch {epoch + 1} done in {rec['time_s']:.0f}s")
-            self.save("last.pt", epoch)
+            self.save("last.pt", epoch, full=dict(
+                model=self.model.state_dict(), optimizer=self.opt.state_dict(), ema_updates=self.ema.updates,
+                history=self.history, best=best, best_metrics=best_metrics, last_step=last_step,
+                hours=(time.time() - t_start) / 3600))
             (self.out / "history.json").write_text(json.dumps(self.history, indent=1))
             if out_of_time:
                 self.log("time limit reached")
@@ -274,9 +299,13 @@ class Trainer:
         (self.out / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
         return summary
 
-    def save(self, name: str, epoch: int) -> None:
-        torch.save({"epoch": epoch, "model_cfg": asdict(self.model.cfg), "names": self.cfg.names,
-                    "ema": self.ema.ema.state_dict()}, self.out / name)
+    def save(self, name: str, epoch: int, full: dict | None = None) -> None:
+        """Checkpoint with EMA weights (for inference); `full` adds the state needed to resume training."""
+        ck = {"epoch": epoch, "model_cfg": asdict(self.model.cfg), "names": self.cfg.names,
+              "ema": self.ema.ema.state_dict(), **(full or {})}
+        tmp = self.out / f".{name}.tmp"
+        torch.save(ck, tmp)
+        tmp.replace(self.out / name)  # atomic: an interruption never leaves a truncated checkpoint
 
 
 def load_for_classes(path: str, names: list[str], head: str = "subset") -> tuple[NextYOLO, str]:
