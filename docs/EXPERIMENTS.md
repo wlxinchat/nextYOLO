@@ -22,14 +22,18 @@ epochs, EMA, seed 0.
 |---|---|---|---|---|---|
 | Ultralytics YOLO26n (reference implementation) | **22.02** | **36.97** | **24.95** | **42.19** | done |
 | nextYOLO-n, recipe v1 | 21.15 | 35.25 | 24.71 | 41.46 | done |
-| nextYOLO-n, recipe v2 (+3× cls-head lr under MuSGD, as Ultralytics does) | | | | | running |
+| **nextYOLO-n, recipe v2** (+3× cls-head lr under MuSGD, as Ultralytics does) | **21.99** | **36.76** | **24.99** | **41.79** | done |
 
 Recipe v1 matched the reference on the NMS branch (−0.24 AP) but trailed on the NMS-free branch (−0.87 AP).
 Re-reading the reference optimiser code showed that Ultralytics trains both classification heads at 3× lr whenever
 MuSGD is used. The code comment says "when finetuning", but the boost applies to every MuSGD run. It only affects
 classification, which fits an o2o-specific gap. Recipe v2 adds it (`cls_lr_mult=3.0`).
 
-At half schedule (epoch 6), v2 reaches 12.14 AP e2e against 11.40 for v1.
+**With v2 the two implementations agree within 0.03–0.04 AP on both branches** (e2e 21.99 vs 22.02, NMS 24.99 vs
+24.95). Together with the weight-level check — official YOLO26 weights loaded into nextYOLO reproduce Ultralytics'
+outputs to 2.4e-4 — this establishes nextYOLO as a faithful YOLO26 implementation at both the architecture level and
+the training-recipe level. The 3× cls-head lr alone was worth +0.84 AP on the NMS-free branch. Recipe v2 is the
+baseline for all later from-scratch ablations.
 
 ## B. Levers on top of YOLO26 (from scratch, same setting as A)
 
@@ -59,7 +63,7 @@ budget), 0.5 warmup epochs, and mosaic off for the last epoch.
 | Ultralytics fine-tune of yolo26n.pt (its trainer; cls heads re-initialised for 20 classes) | 47.67 | 65.79 | 54.55 | 75.28 | done |
 | **nextYOLO fine-tune, class-subset head init** | **56.96** | **76.95** | **58.08** | **78.41** | done |
 | nextYOLO fine-tune, re-initialised cls heads (isolates the head-init effect) | | | | | queued |
-| nextYOLO fine-tune + dense distillation from YOLO26s (o2o assignment: self) | | | | | running |
+| nextYOLO fine-tune + dense distillation from YOLO26s (o2o assignment: self) | 52.44 | 71.95 | 57.06 | 77.66 | done |
 | nextYOLO fine-tune + dense distillation, o2o assignment follows the teacher | | | | | queued |
 
 Under the same 3-epoch budget, **class-subset head transfer beats standard fine-tuning by +9.3 AP e2e and +3.5 AP
@@ -69,6 +73,13 @@ implementation differences.
 
 Fine-tuning curve (e2e AP by epoch): 50.47 → 53.70 → 56.96. The first epoch of mosaic-augmented fine-tuning drops
 6 AP below the zero-shot start before recovering. At this budget, fine-tuning only just beats zero-shot (+0.4 AP).
+
+**Distillation with o2o self-assignment hurts:** −4.5 AP e2e and −1.0 AP o2m+NMS against plain fine-tuning (by epoch:
+44.20 → 49.07 → 52.44). Most of the loss (about 3.5 of 4.5 AP) is specific to the NMS-free branch. This fits the
+conflict predicted before the run: the n student and s teacher fire their o2o outputs at the same anchor only about 40%
+of the time, so distilling the teacher's o2o map while the ground-truth loss assigns the o2o positive from the
+student's *own* ranking pushes the o2o head in two directions. The run with the o2o assignment following the teacher
+tests this directly.
 
 ## Reproducing
 
