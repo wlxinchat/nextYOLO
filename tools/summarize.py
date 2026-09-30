@@ -25,6 +25,11 @@ def row_for(run: Path) -> dict | None:
                    **{f"loss.{k}": v for k, v in cfg["loss"].items()}}
         if cfg.get("optimizer", "musgd") != "musgd":
             changes["optimizer"] = cfg["optimizer"]
+        if cfg.get("init"):
+            changes["init"] = Path(cfg["init"]).name + ("" if cfg.get("init_head", "subset") == "subset"
+                                                         else f" ({cfg['init_head']} cls head)")
+        for k, v in cfg.get("distill", {}).items():
+            changes[f"distill.{k}"] = Path(v).name if k == "teacher" else v
         if cfg.get("seed", 0):
             changes["seed"] = cfg["seed"]
         nms = d.get("final_o2m_nms", {})
@@ -49,7 +54,7 @@ def fmt(x, pct=True):
 def main():
     rows = [r for p in sys.argv[1:] if (r := row_for(Path(p)))]
     print("| run | impl | change vs. YOLO26 recipe | AP e2e (o2o, NMS-free) | AP50 e2e | AP_S e2e | "
-          "AP o2m+NMS | AP50 o2m+NMS | AP e2e @ half schedule | hours |")
+          "AP o2m+NMS | AP50 o2m+NMS | AP e2e @ first eval | hours |")
     print("|---|---|---|---|---|---|---|---|---|---|")
     for r in rows:
         print(f"| {r['run']} | {r['impl']} | {r['changes']} | {fmt(r['e2e'])} | {fmt(r['e2e50'])} | {fmt(r['aps'])} | "
