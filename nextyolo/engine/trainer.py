@@ -38,6 +38,7 @@ class TrainConfig:
     nbs: int = 64                  # nominal batch size (gradient accumulation target)
     imgsz: int = 640
     optimizer: str = "musgd"       # musgd | sgd | adamw
+    cls_lr_mult: float = 3.0       # lr multiplier for classification heads under MuSGD (as in YOLO26)
     lr0: float = 0.01
     lrf: float = 0.01
     momentum: float = 0.937
@@ -88,8 +89,27 @@ class ModelEMA:
                 v.copy_(msd[k])
 
 
-def build_optimizer(model: nn.Module, name: str, lr: float, momentum: float, decay: float):
-    """Three groups (conv/linear weights with decay, norm weights, biases); MuSGD adds Muon to matrix weights."""
+def build_optimizer(model: nn.Module, name: str, lr: float, momentum: float, decay: float,
+                    boost: set[int] | None = None, boost_mult: float = 1.0):
+    """Three groups (conv/linear weights with decay, norm weights, biases); MuSGD adds Muon to matrix weights.
+
+    Parameters whose id() is in `boost` get their own groups with lr * boost_mult (YOLO26 trains the classification
+    heads at 3x lr under MuSGD).
+    """
+    opt = _build_optimizer(model, name, lr, momentum, decay)
+    if not boost or boost_mult == 1.0:
+        return opt
+    groups = []
+    for g in opt.param_groups:
+        hot = [p for p in g["params"] if id(p) in boost]
+        cold = [p for p in g["params"] if id(p) not in boost]
+        opts = {k: v for k, v in g.items() if k != "params"}
+        groups += [dict(opts, params=cold)] + ([dict(opts, params=hot, lr=g["lr"] * boost_mult)] if hot else [])
+    kw = dict(muon_scale=opt.muon_scale, sgd_scale=opt.sgd_scale) if isinstance(opt, MuSGD) else {}
+    return type(opt)(groups, **kw) if isinstance(opt, MuSGD) else type(opt)(groups)
+
+
+def _build_optimizer(model: nn.Module, name: str, lr: float, momentum: float, decay: float):
     g_w, g_bn, g_b = [], [], []
     for mod in model.modules():
         for pn, p in mod.named_parameters(recurse=False):
@@ -164,9 +184,12 @@ class Trainer:
         self.loader = self._loader()
         self.accumulate = max(round(cfg.nbs / cfg.batch), 1)
         wd = cfg.weight_decay * cfg.batch * self.accumulate / cfg.nbs
-        self.opt = build_optimizer(self.model, cfg.optimizer, cfg.lr0, cfg.momentum, wd)
+        head = self.model.head
+        boost = {id(p) for m in (head.cls, getattr(head, "o2o_cls", None)) if m is not None for p in m.parameters()}
+        mult = cfg.cls_lr_mult if cfg.optimizer.lower() == "musgd" else 1.0
+        self.opt = build_optimizer(self.model, cfg.optimizer, cfg.lr0, cfg.momentum, wd, boost, mult)
         for g in self.opt.param_groups:
-            g["initial_lr"] = cfg.lr0
+            g["initial_lr"] = g["lr"]
         self.ema = ModelEMA(self.model, cfg.ema_decay, cfg.ema_tau)
         self.history: list[dict] = []
         info = self.model.info(cfg.imgsz)

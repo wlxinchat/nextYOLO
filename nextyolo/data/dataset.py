@@ -110,8 +110,10 @@ def random_affine(img, boxes, out_size: int, border: int = 0, degrees=0.0, trans
 
 
 class YOLODataset(Dataset):
-    def __init__(self, sources, imgsz: int = 640, train: bool = True, hyp: dict | None = None, cache: bool = True,
-                 max_images: int | None = None, workers: int = 8):
+    def __init__(self, sources, imgsz: int = 640, train: bool = True, hyp: dict | None = None,
+                 cache: bool | str = "jpeg", max_images: int | None = None, workers: int = 8):
+        """cache: "raw" keeps decoded uint8 arrays in RAM; "jpeg" keeps quality-95 JPEG bytes (~5x smaller, ~1 ms to
+        decode a 320 px image); False reads from disk every time."""
         self.files = list_images(sources)
         if max_images:
             self.files = self.files[:max_images]
@@ -123,9 +125,10 @@ class YOLODataset(Dataset):
         self.labels = [read_labels(img2label_path(f)) for f in self.files]
         self.orig_shapes: list[tuple[int, int]] = [None] * len(self.files)
         self.imgs: list[np.ndarray | None] = [None] * len(self.files)
-        if cache:
+        self.cache = "raw" if cache is True else cache
+        if self.cache:
             with ThreadPoolExecutor(workers) as ex:
-                for i, (im, hw) in enumerate(ex.map(self._read_resized, range(len(self.files)))):
+                for i, (im, hw) in enumerate(ex.map(self._read_cached, range(len(self.files)))):
                     self.imgs[i], self.orig_shapes[i] = im, hw
 
     def __len__(self):
@@ -142,12 +145,19 @@ class YOLODataset(Dataset):
                             interpolation=cv2.INTER_AREA if r < 1 else cv2.INTER_LINEAR)
         return im, (h, w)
 
+    def _read_cached(self, i: int):
+        im, hw = self._read_resized(i)
+        if self.cache == "jpeg":
+            im = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, 95])[1]
+        return im, hw
+
     def load_image(self, i: int) -> np.ndarray:
-        if self.imgs[i] is None:
+        im = self.imgs[i]
+        if im is None:
             im, hw = self._read_resized(i)
             self.orig_shapes[i] = hw
             return im
-        return self.imgs[i]
+        return cv2.imdecode(im, cv2.IMREAD_COLOR) if im.ndim == 1 else im
 
     def _pixel_boxes(self, i: int, w: int, h: int, ox: float = 0, oy: float = 0):
         lb = self.labels[i]
