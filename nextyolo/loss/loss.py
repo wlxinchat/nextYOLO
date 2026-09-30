@@ -32,7 +32,8 @@ class LossConfig:
     o2m_topk: int = 10
     o2o_topk: int = 7              # o2o picks top-1 out of its top-k pool (consistent matching)
     o2o_assign: str = "self"       # "self": o2o ranks anchors by its own predictions (YOLO26);
-                                   # "o2m": AOA — o2o positive = top-1 of the o2m ranking (nextYOLO)
+                                   # "o2m": AOA — o2o positive = top-1 of the o2m ranking (nextYOLO);
+                                   # "teacher": top-1 of a distillation teacher's o2o ranking
     prog_loss: bool = True         # decay o2m weight 0.8 -> 0.1 across training
     o2m_w0: float = 0.8
     o2m_w1: float = 0.1
@@ -164,12 +165,15 @@ class DetectionLoss:
         else:
             self.w_o2m = self.w_o2o = 0.5
 
-    def __call__(self, preds: dict, targets: torch.Tensor, imgsz: tuple[int, int]):
+    def __call__(self, preds: dict, targets: torch.Tensor, imgsz: tuple[int, int], teacher: dict | None = None):
         B = preds["o2m"][0].shape[0]
         labels, boxes, mask = prepare_targets(targets.to(preds["o2m"][0].device), B, imgsz)
         l_m, items_m = self.o2m(*preds["o2m"], preds["shapes"], labels, boxes, mask, imgsz)
         if not self.end2end:
             return l_m, {"o2m": items_m}
-        src = preds["o2m"] if self.cfg.o2o_assign == "o2m" else None
+        mode = self.cfg.o2o_assign
+        if mode == "teacher" and teacher is None:
+            raise ValueError("o2o_assign='teacher' needs teacher predictions")
+        src = preds["o2m"] if mode == "o2m" else teacher["o2o"] if mode == "teacher" else None
         l_o, items_o = self.o2o(*preds["o2o"], preds["shapes"], labels, boxes, mask, imgsz, assign_src=src)
         return self.w_o2m * l_m + self.w_o2o * l_o, {"o2m": items_m, "o2o": items_o}

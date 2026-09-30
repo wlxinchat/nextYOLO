@@ -7,7 +7,7 @@ import json
 import math
 import random
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +16,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from ..data.dataset import YOLODataset, collate
+from ..loss.distill import DistillConfig, distill_loss
 from ..loss.loss import DetectionLoss, LossConfig
 from ..nn.model import ModelConfig, NextYOLO
 from ..optim.musgd import MuSGD
@@ -53,6 +54,9 @@ class TrainConfig:
     loss: dict = field(default_factory=dict)     # LossConfig overrides
     max_train_images: int | None = None
     time_limit_h: float | None = None
+    distill: dict = field(default_factory=dict)  # DistillConfig overrides; distill.teacher enables KD
+    init: str | None = None        # start from a checkpoint (nextYOLO .pt or Ultralytics YOLO26 .pt)
+    init_head: str = "subset"      # "subset": slice cls heads to our classes by name; "random": re-init cls heads
     compile: bool = False          # torch.compile the training forward (+~25% CPU throughput)
     channels_last: bool = True
 
@@ -127,10 +131,20 @@ class Trainer:
         self.out = Path(cfg.out)
         self.out.mkdir(parents=True, exist_ok=True)
         nc = len(cfg.names)
-        self.model = NextYOLO(ModelConfig(nc=nc, **cfg.model))
+        self.model = self._init_model(nc) if cfg.init else NextYOLO(ModelConfig(nc=nc, **cfg.model))
         self.mem_format = torch.channels_last if cfg.channels_last else torch.contiguous_format
         self.model = self.model.to(memory_format=self.mem_format)
         self.fwd = torch.compile(self.model) if cfg.compile else self.model
+        self.dcfg = DistillConfig(**cfg.distill)
+        self.teacher = None
+        if self.dcfg.teacher:
+            t, how = load_for_classes(self.dcfg.teacher, cfg.names, "subset")
+            t = t.eval().to(memory_format=self.mem_format)
+            for p in t.parameters():
+                p.requires_grad_(False)
+            t.head.return_raw = True
+            self.teacher = t
+            self.log(f"distilling from {self.dcfg.teacher} (head: {how}, {sum(p.numel() for p in t.parameters()) / 1e6:.1f}M params)")
         self.loss_cfg = LossConfig(**cfg.loss)
         self.criterion = DetectionLoss(nc, self.model.stride.tolist(), self.loss_cfg, self.model.cfg.end2end,
                                        cfg.epochs)
@@ -151,6 +165,11 @@ class Trainer:
         info = self.model.info(cfg.imgsz)
         self.log(f"model: {info['params'] / 1e6:.3f}M params, {info['gflops']:.2f} GFLOPs@{cfg.imgsz} | "
                  f"cfg {json.dumps(asdict(cfg), default=str)}")
+
+    def _init_model(self, nc: int) -> NextYOLO:
+        model, how = load_for_classes(self.cfg.init, self.cfg.names, self.cfg.init_head)
+        self.log(f"initialised from {self.cfg.init} (classification head: {how})")
+        return model.train()
 
     def _loader(self):
         return DataLoader(self.train_set, batch_size=self.cfg.batch, shuffle=True, num_workers=self.cfg.workers,
@@ -194,7 +213,15 @@ class Trainer:
                             g["momentum"] = float(np.interp(ni, xi, [cfg.warmup_momentum, cfg.momentum]))
                 x = (imgs.float() / 255).contiguous(memory_format=self.mem_format)
                 preds = self.fwd(x)
-                loss, items = self.criterion(preds, targets, (cfg.imgsz, cfg.imgsz))
+                t_preds = None
+                if self.teacher is not None:
+                    with torch.no_grad():
+                        t_preds = self.teacher(x)
+                loss, items = self.criterion(preds, targets, (cfg.imgsz, cfg.imgsz), teacher=t_preds)
+                if t_preds is not None:
+                    l_kd, kd_items = distill_loss(preds, t_preds, self.dcfg)
+                    loss = loss + l_kd
+                    kd_run = kd_items if i == 0 else kd_run * (i / (i + 1)) + kd_items / (i + 1)
                 loss.backward()
                 if ni - last_step >= self.accumulate:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
@@ -208,7 +235,8 @@ class Trainer:
                     ips = (i + 1) * cfg.batch / (time.time() - t_ep)
                     self.log(f"ep {epoch + 1}/{cfg.epochs} it {i}/{nb} o2m[box {run[0]:.3f} cls {run[1]:.3f} "
                              f"l1 {run[2]:.3f}] o2o[box {run[3]:.3f} cls {run[4]:.3f} l1 {run[5]:.3f}] "
-                             f"{ips:.1f} img/s")
+                             f"{ips:.1f} img/s" + (f" kd[cls {kd_run[0]:.3f} box {kd_run[1]:.3f}]"
+                                                   if self.teacher is not None else ""))
             # epoch end: scheduler step (applies to the next epoch)
             for g in self.opt.param_groups:
                 g["lr"] = g["initial_lr"] * self.lr_factor(epoch + 1)
@@ -248,6 +276,37 @@ class Trainer:
     def save(self, name: str, epoch: int) -> None:
         torch.save({"epoch": epoch, "model_cfg": asdict(self.model.cfg), "names": self.cfg.names,
                     "ema": self.ema.ema.state_dict()}, self.out / name)
+
+
+def load_for_classes(path: str, names: list[str], head: str = "subset") -> tuple[NextYOLO, str]:
+    """Load a nextYOLO or Ultralytics YOLO26 checkpoint and adapt its classification heads to `names`.
+
+    head="subset" slices the heads by class name when the checkpoint's classes are a superset (COCO -> VOC);
+    otherwise (or with head="random") the cls heads are re-initialised and everything else is transferred.
+    """
+    from ..nn.model import subset_classes
+    try:
+        src = load_model(path)
+        src_names = src.names
+    except (KeyError, TypeError):  # not a nextYOLO checkpoint: try the Ultralytics format
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        from tools.convert_ultralytics import load_ultralytics
+        src, src_names = load_ultralytics(path)
+    from tools.val import class_index_map
+    try:
+        keep = class_index_map(src_names, names)
+    except ValueError:
+        keep = "missing"
+    if keep is None:
+        return src, "kept"
+    if keep != "missing" and head == "subset":
+        return subset_classes(src, keep), "subset"
+    model = NextYOLO(replace(src.cfg, nc=len(names)))
+    own = model.state_dict()
+    model.load_state_dict({k: v for k, v in src.state_dict().items() if k in own and own[k].shape == v.shape},
+                          strict=False)
+    return model, "random"
 
 
 def _worker_init(worker_id: int) -> None:

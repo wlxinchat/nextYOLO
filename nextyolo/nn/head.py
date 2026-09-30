@@ -44,6 +44,7 @@ class DetectHead(nn.Module):
             self.o2o_box = copy.deepcopy(self.box)
             self.o2o_cls = copy.deepcopy(self.cls)
         self._anchor_cache: tuple | None = None
+        self.return_raw = False  # eval-mode forward returning raw branch outputs (distillation teacher)
 
     def bias_init(self, ref_imgsz: int = 640) -> None:
         """Box bias -> ~2 cells per side; class prior ~5 objects per image spread over nc classes."""
@@ -64,7 +65,7 @@ class DetectHead(nn.Module):
 
     def forward(self, feats: list[torch.Tensor]):
         shapes = [tuple(f.shape[2:]) for f in feats]
-        if self.training:
+        if self.training or self.return_raw:
             out = {"shapes": shapes, "o2m": self._branch(feats, self.box, self.cls)}
             if self.end2end:
                 s = self.o2o_grad_scale

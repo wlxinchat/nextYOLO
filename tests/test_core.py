@@ -215,3 +215,19 @@ def test_onnx_export_nms_free(tmp_path):
     ops = {n.op_type for n in onnx.load(path).graph.node}
     assert "TopK" in ops and "NonMaxSuppression" not in ops
     assert check_onnx(m, path, 128, top=20) < 1e-2
+
+
+def test_distill_loss_zero_gradient_at_teacher():
+    from nextyolo.loss.distill import DistillConfig, distill_loss
+
+    torch.manual_seed(0)
+    t = {"o2m": (torch.randn(2, 4, 50), torch.randn(2, 3, 50)), "o2o": (torch.randn(2, 4, 50), torch.randn(2, 3, 50))}
+    s = {k: tuple(x.clone().requires_grad_(True) for x in v) for k, v in t.items()}
+    loss, parts = distill_loss(s, t, DistillConfig())
+    loss.backward()
+    assert parts[1] == 0 and abs(parts[0]) < 1e-5
+    for v in s.values():
+        for x in v:
+            assert x.grad.abs().max() < 1e-6
+    s2 = {k: tuple((x + 1.0).requires_grad_(True) for x in v) for k, v in t.items()}
+    assert distill_loss(s2, t, DistillConfig())[0] > loss
