@@ -64,7 +64,8 @@ budget), 0.5 warmup epochs, and mosaic off for the last epoch.
 | **nextYOLO fine-tune, class-subset head init** | **56.96** | **76.95** | **58.08** | **78.41** | done |
 | nextYOLO fine-tune, re-initialised cls heads (isolates the head-init effect) | | | | | queued |
 | nextYOLO fine-tune + dense distillation from YOLO26s (o2o assignment: self) | 52.44 | 71.95 | 57.06 | 77.66 | done |
-| nextYOLO fine-tune + dense distillation, o2o assignment follows the teacher | | | | | queued |
+| nextYOLO fine-tune + dense distillation, o2o assignment follows the teacher | 50.49 | 68.32 | 57.03 | 77.69 | done |
+| nextYOLO fine-tune + distillation of the o2m branch only | | | | | queued |
 
 Under the same 3-epoch budget, **class-subset head transfer beats standard fine-tuning by +9.3 AP e2e and +3.5 AP
 o2m+NMS.** The gain is largest for the NMS-free branch: a re-initialised o2o head has to relearn "exactly one anchor
@@ -78,8 +79,17 @@ Fine-tuning curve (e2e AP by epoch): 50.47 → 53.70 → 56.96. The first epoch 
 44.20 → 49.07 → 52.44). Most of the loss (about 3.5 of 4.5 AP) is specific to the NMS-free branch. This fits the
 conflict predicted before the run: the n student and s teacher fire their o2o outputs at the same anchor only about 40%
 of the time, so distilling the teacher's o2o map while the ground-truth loss assigns the o2o positive from the
-student's *own* ranking pushes the o2o head in two directions. The run with the o2o assignment following the teacher
-tests this directly.
+student's *own* ranking pushes the o2o head in two directions.
+
+**That hypothesis did not hold.** Letting the teacher's o2o ranking choose the o2o positive, so the ground-truth and
+distillation losses agree, made the NMS-free branch *worse* (50.49 vs 52.44 AP). It matches the AOA result: in every
+variant tried, taking the one-to-one assignment from any ranking other than the o2o head's own hurts. The student did
+learn to mimic the teacher (the KL term fell from about 11.8 to 3.1), yet distillation also cost ~1 AP on the dense
+branch. The remaining suspect is the teacher's targets themselves. The teacher is a COCO model evaluated zero-shot, so
+its soft labels carry COCO annotation conventions (box extents, objects VOC marks `difficult` and drops, near-miss
+classes such as truck/car) that conflict with VOC ground truth. The standard remedy, a teacher fine-tuned on VOC, costs
+about 4 CPU-hours for YOLO26s and was not run. The o2m-only distillation run separates o2o-specific harm from
+target-quality harm.
 
 ## Reproducing
 
