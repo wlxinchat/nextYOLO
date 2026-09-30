@@ -78,7 +78,8 @@ def main():
         model.train(data=str(yaml_path), imgsz=a.imgsz, epochs=a.epochs, batch=a.batch, device="cpu",
                     workers=a.workers, optimizer=a.optimizer, lr0=a.lr0, warmup_epochs=a.warmup_epochs,
                     close_mosaic=a.close_mosaic, cache="ram", amp=False, plots=False, val=False, seed=0,
-                    deterministic=False, pretrained=False, project=str(out), name="train", exist_ok=True,
+                    deterministic=False, pretrained=a.model.endswith(".pt"), project=str(out), name="train",
+                    exist_ok=True,
                     compile=a.compile, fraction=a.fraction)
         weights = out / "train" / "weights" / "last.pt"
 

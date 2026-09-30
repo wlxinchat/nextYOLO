@@ -47,6 +47,7 @@ class TrainConfig:
     workers: int = 2
     threads: int = 0               # torch intra-op threads (0 = leave default)
     eval_interval: int = 5
+    log_interval: int = 50
     eval_max_images: int | None = None
     seed: int = 0
     hyp: dict = field(default_factory=dict)      # augmentation overrides
@@ -231,7 +232,7 @@ class Trainer:
                     last_step = ni
                 vec = torch.cat([items["o2m"], items.get("o2o", torch.zeros(3))])
                 run = run * (i / (i + 1)) + vec / (i + 1)
-                if i % 50 == 0:
+                if i % self.cfg.log_interval == 0:
                     ips = (i + 1) * cfg.batch / (time.time() - t_ep)
                     self.log(f"ep {epoch + 1}/{cfg.epochs} it {i}/{nb} o2m[box {run[0]:.3f} cls {run[1]:.3f} "
                              f"l1 {run[2]:.3f}] o2o[box {run[3]:.3f} cls {run[4]:.3f} l1 {run[5]:.3f}] "

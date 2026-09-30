@@ -25,8 +25,8 @@ import torch.nn.functional as F
 @dataclass
 class DistillConfig:
     teacher: str | None = None     # checkpoint path (nextYOLO or Ultralytics YOLO26)
-    cls_gain: float = 1.0
-    box_gain: float = 1.0
+    cls_gain: float = 0.25        # KL term is ~5x the task cls loss early in fine-tuning
+    box_gain: float = 0.5
     temperature: float = 1.0
     box_min_conf: float = 0.1
     branches: tuple = ("o2m", "o2o")
