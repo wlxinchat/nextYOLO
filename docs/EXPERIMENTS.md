@@ -79,7 +79,7 @@ budget), 0.5 warmup epochs, and mosaic off for the last epoch.
 | nextYOLO fine-tune, re-initialised cls heads (isolates the head-init effect) | 49.22 | 67.83 | 55.40 | 76.12 | done |
 | nextYOLO fine-tune + dense distillation from YOLO26s (o2o assignment: self) | 52.44 | 71.95 | 57.06 | 77.66 | done |
 | nextYOLO fine-tune + dense distillation, o2o assignment follows the teacher | 50.49 | 68.32 | 57.03 | 77.69 | done |
-| nextYOLO fine-tune + distillation of the o2m branch only | | | | | queued |
+| nextYOLO fine-tune + distillation of the o2m branch only | 56.78 | 77.32 | 57.24 | 77.90 | done |
 
 Under the same 3-epoch budget, **class-subset head transfer beats standard fine-tuning by +9.3 AP e2e and +3.5 AP
 o2m+NMS.** Within nextYOLO alone, the head initialisation accounts for **+7.7 AP e2e and +2.7 AP o2m+NMS** (56.96 vs
@@ -103,8 +103,30 @@ learn to mimic the teacher (the KL term fell from about 11.8 to 3.1), yet distil
 branch. The remaining suspect is the teacher's targets themselves. The teacher is a COCO model evaluated zero-shot, so
 its soft labels carry COCO annotation conventions (box extents, objects VOC marks `difficult` and drops, near-miss
 classes such as truck/car) that conflict with VOC ground truth. The standard remedy, a teacher fine-tuned on VOC, costs
-about 4 CPU-hours for YOLO26s and was not run. The o2m-only distillation run separates o2o-specific harm from
-target-quality harm.
+about 4 CPU-hours for YOLO26s and was not run.
+
+**The o2m-only run separates the two effects.** With distillation applied only to the dense branch, the NMS-free AP
+is back to 56.78, within noise of plain fine-tuning (56.96). **Distilling the one-to-one score map therefore caused
+about 4.3 of the 4.5 AP e2e loss.** The remaining ~0.8 AP loss on the dense branch (57.24 vs 58.08) is what the
+zero-shot COCO teacher's targets cost.
+
+### A consistent principle: the one-to-one head must stay self-consistent
+
+Three independent interventions imposed an external ranking on the NMS-free branch, and all three hurt it badly:
+
+| intervention on the o2o branch | Δ AP e2e |
+|---|---|
+| assignment from the o2m branch's ranking (AOA) | −2.5 (at half schedule) |
+| assignment from a teacher's o2o ranking (+ KD) | −6.5 |
+| distilling a teacher's o2o score map | −4.3 |
+| distilling only the dense o2m branch (o2o left alone) | −0.2 (noise) |
+
+A one-to-one head works by committing to **one** anchor per object and suppressing that anchor's near-identical
+neighbours. Which anchor wins is arbitrary but has to be *self-consistent*: the anchor where the head's own box and
+score are best, so that targets, scores and box quality reinforce each other. Any external opinion about which anchor
+should fire — another branch, another model — breaks that consistency, even when the external opinion comes from a
+stronger model. For dual-head NMS-free detectors: **distil or regularise the dense branch, and leave the one-to-one
+branch to its self-assigned ground-truth loss.**
 
 ## Reproducing
 
