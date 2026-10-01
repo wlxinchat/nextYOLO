@@ -224,6 +224,18 @@ of the schedule is spent recovering it. At 1e-4 the start is preserved and every
 n/320 after 3 epochs, and after 2 epochs the s/640 run is already level with the old recipe's 10-epoch result. 3e-5
 is too conservative.
 
+With lr 1e-4 (YOLO26n → VOC, 320 px, CPU):
+
+| run | AP e2e by epoch | final AP o2m+NMS |
+|---|---|---|
+| 3 epochs | 56.54 / 58.14 / 58.96 | 59.42 |
+| **6 epochs** | 56.54 / 57.95 / 58.65 / 59.01 / 59.37 / **60.03** | **60.70** |
+| 3 epochs + distillation from the VOC-tuned s (o2m only) | 57.34 / 59.03 / 59.19 | 59.94 |
+
+Longer training still pays at the new lr: +1.1 AP from 3 to 6 epochs, and the curve is still rising. Distillation
+adds on top of the lr gain (+0.23 AP e2e, +0.52 AP o2m+NMS; +0.8–0.9 AP at epochs 1–2). The gain is smaller than at
+640 px on the GPU (+0.73), probably because this teacher was trained at 640 px and is weaker at 320.
+
 ## Reproducing
 
 ```bash
