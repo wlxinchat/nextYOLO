@@ -396,7 +396,7 @@ def load_for_classes(path: str, names: list[str], head: str = "subset") -> tuple
         return src, "kept"
     if keep != "missing" and head == "subset":
         return subset_classes(src, keep), "subset"
-    model = NextYOLO(replace(src.cfg, nc=len(names)))
+    model = NextYOLO(replace(src.cfg, nc=len(names), cls_hidden=None))  # fresh cls branch, as Ultralytics does
     own = model.state_dict()
     model.load_state_dict({k: v for k, v in src.state_dict().items() if k in own and own[k].shape == v.shape},
                           strict=False)
@@ -413,6 +413,10 @@ def _worker_init(worker_id: int) -> None:
 def load_model(path: str) -> NextYOLO:
     ck = torch.load(path, map_location="cpu", weights_only=False)
     cfg = ModelConfig(**{k: (tuple(v) if k == "levels" else v) for k, v in ck["model_cfg"].items()})
+    if cfg.cls_hidden is None:  # older sliced-head checkpoints: read the cls-branch width off the weights
+        w = next((v for k, v in ck["ema"].items() if k.endswith("cls.0.2.weight")), None)
+        if w is not None:
+            cfg = replace(cfg, cls_hidden=w.shape[1])
     model = NextYOLO(cfg)
     # older checkpoints also carried the head under a duplicate "head." prefix
     model.load_state_dict({k: v for k, v in ck["ema"].items() if not k.startswith("head.")})

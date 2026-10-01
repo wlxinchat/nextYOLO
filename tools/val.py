@@ -44,7 +44,8 @@ def main():
     ap.add_argument("--ultralytics", help="Ultralytics YOLO26 checkpoint (loaded into nextYOLO)")
     ap.add_argument("--data", required=True)
     ap.add_argument("--imgsz", type=int, default=640)
-    ap.add_argument("--mode", default="e2e", choices=["e2e", "nms"])
+    ap.add_argument("--mode", default="e2e", choices=["e2e", "nms", "both"])
+    ap.add_argument("--device", default="auto", help="auto = cuda if available, else cpu")
     ap.add_argument("--threads", type=int, default=0)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--max_images", type=int, default=None)
@@ -66,14 +67,19 @@ def main():
     keep = class_index_map(names, spec["names"])
     if keep is not None:
         model = subset_classes(model, keep)
-    model.eval()
-    if a.mode == "nms":
-        model.head.end2end = False
+    device = torch.device("cuda" if a.device == "auto" and torch.cuda.is_available()
+                          else "cpu" if a.device == "auto" else a.device)
+    model = model.to(device).eval()
     root = Path(spec["root"])
     ds = YOLODataset([str(root / v) for v in spec["val"]], a.imgsz, train=False, max_images=a.max_images)
-    res = evaluate(model, ds, workers=a.workers, mode=a.mode, max_images=a.max_images)
-    res.update(weights=a.weights or a.ultralytics, imgsz=a.imgsz, mode=a.mode)
-    print(json.dumps({k: v for k, v in res.items() if k != "per_class_ap"}, indent=1))
+    res = {}
+    for mode in (["e2e", "nms"] if a.mode == "both" else [a.mode]):
+        model.head.end2end = mode == "e2e"  # nms: dense o2m branch + NMS
+        r = evaluate(model, ds, workers=a.workers, mode=mode, max_images=a.max_images)
+        r.update(weights=a.weights or a.ultralytics, imgsz=a.imgsz, mode=mode, device=str(device))
+        print(json.dumps({k: v for k, v in r.items() if k != "per_class_ap"}), flush=True)
+        res[mode] = r
+    res = res[a.mode] if a.mode != "both" else res
     if a.out:
         Path(a.out).write_text(json.dumps(res, indent=1))
 

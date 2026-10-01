@@ -31,6 +31,7 @@ class ModelConfig:
     p2_fusion: bool = False       # fuse a lossless space-to-depth P2 map into the P3 neck node
     attn_area: int = 1            # area-attention stripes in the P5 attention blocks (1 = global)
     o2o_grad_scale: float = 0.0   # 0 = o2o branch fully detached from the backbone (YOLOv10/26)
+    cls_hidden: int | None = None  # cls-branch width; None = max(ch_P3, min(nc, 100)). Set when heads are sliced.
     max_det: int = 300
     extra: dict = field(default_factory=dict)
 
@@ -129,7 +130,8 @@ class NextYOLO(nn.Module):
                 m = Concat()
             elif t == "Detect":
                 c2 = 0
-                m = DetectHead(cfg.nc, [ch[s] for s in srcs], cfg.end2end, cfg.max_det, cfg.o2o_grad_scale)
+                m = DetectHead(cfg.nc, [ch[s] for s in srcs], cfg.end2end, cfg.max_det, cfg.o2o_grad_scale,
+                               cfg.cls_hidden)
             else:
                 raise ValueError(t)
             m.f = srcs if srcs is not None else (i - 1 if f == -1 else f)
@@ -250,5 +252,6 @@ def subset_classes(model: NextYOLO, keep: list[int]) -> NextYOLO:
             conv.bias.copy_(old.bias[idx])
             seq[-1] = conv
     new.head.nc = len(keep)
-    new.cfg = replace(new.cfg, nc=len(keep))
+    # keep the source cls-branch width (it depends on the source class count) so checkpoints can be rebuilt
+    new.cfg = replace(new.cfg, nc=len(keep), cls_hidden=new.head.cls[0][-1].in_channels)
     return new

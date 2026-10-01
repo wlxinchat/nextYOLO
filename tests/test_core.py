@@ -231,3 +231,21 @@ def test_distill_loss_zero_gradient_at_teacher():
             assert x.grad.abs().max() < 1e-6
     s2 = {k: tuple((x + 1.0).requires_grad_(True) for x in v) for k, v in t.items()}
     assert distill_loss(s2, t, DistillConfig())[0] > loss
+
+
+def test_sliced_head_checkpoint_roundtrip(tmp_path):
+    """A head sliced from 80 to 20 classes keeps its 80-wide cls branch; the checkpoint must rebuild it."""
+    from dataclasses import asdict, replace
+
+    from nextyolo.engine.trainer import load_model
+    from nextyolo.nn.model import subset_classes
+
+    torch.manual_seed(0)
+    src = NextYOLO(ModelConfig(nc=80, scale="n")).eval()
+    sub = subset_classes(src, list(range(0, 80, 4))).eval()
+    assert sub.head.cls[0][-1].in_channels == 80 and sub.cfg.cls_hidden == 80
+    x = torch.rand(1, 3, 128, 128)
+    for cfg in (sub.cfg, replace(sub.cfg, cls_hidden=None)):  # new checkpoints, and old ones without cls_hidden
+        p = tmp_path / "ck.pt"
+        torch.save({"model_cfg": asdict(cfg), "names": [str(i) for i in range(20)], "ema": sub.state_dict()}, p)
+        torch.testing.assert_close(load_model(str(p))(x), sub(x))

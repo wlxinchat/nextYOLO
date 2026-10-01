@@ -117,6 +117,9 @@ def main():
     ap.add_argument("--scale", default="n")
     ap.add_argument("--init", default=None, help="official weights to fine-tune from, e.g. yolo26s (voc_ft preset)")
     ap.add_argument("--set", nargs="*", default=[], help="extra overrides passed to tools/train.py")
+    ap.add_argument("--eval", nargs="*", default=None, metavar="WEIGHTS:IMGSZ",
+                    help="evaluate instead of training: official names (yolo26m) or checkpoint paths, e.g. "
+                         "yolo26m:640 /content/runs/ft_s640/best.pt:768; reports NMS-free and NMS AP")
     a = ap.parse_args()
 
     work = Path(a.work)
@@ -129,6 +132,29 @@ def main():
     gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none"
     print(f"torch {torch.__version__}, CUDA device: {gpu}, CPUs: {os.cpu_count()}", flush=True)
     data = get_voc(work, repo, a.data_dir)
+
+    if a.eval is not None:
+        results = {}
+        for spec in a.eval:
+            w, _, size = spec.rpartition(":")
+            w, size = (w, int(size)) if w else (spec, 640)
+            if Path(w).exists():
+                src = ["--weights", w]
+            else:  # official Ultralytics weights, evaluated zero-shot with class-subset heads
+                sh([sys.executable, "-m", "pip", "install", "-q", "ultralytics"])
+                pt = work / f"{w}.pt"
+                fetch(f"{ASSETS}/v8.4.0/{w}.pt", pt)
+                src = ["--ultralytics", str(pt)]
+            out_json = work / "evals" / f"{Path(w).parent.name + '_' if Path(w).exists() else ''}{Path(w).stem}_{size}.json"
+            out_json.parent.mkdir(exist_ok=True)
+            sh([sys.executable, str(repo / "tools" / "val.py"), *src, "--data", str(data), "--imgsz", str(size),
+                "--mode", "both", "--workers", str(min(4, os.cpu_count() or 2)), "--out", str(out_json)], cwd=repo)
+            r = json.loads(out_json.read_text())
+            results[spec] = {m: {k: round(100 * r[m][k], 2) for k in ("mAP", "mAP50", "mAP75", "APs", "APm", "APl")}
+                             for m in ("e2e", "nms")}
+            print("EVAL", spec, json.dumps(results[spec]), flush=True)
+        (work / "evals" / "summary.json").write_text(json.dumps(results, indent=1))
+        return
 
     name = a.name or a.preset
     out = work / "runs" / name

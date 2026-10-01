@@ -24,7 +24,7 @@ from .blocks import Conv, DWConv
 
 class DetectHead(nn.Module):
     def __init__(self, nc: int, ch: list[int], end2end: bool = True, max_det: int = 300,
-                 o2o_grad_scale: float = 0.0):
+                 o2o_grad_scale: float = 0.0, cls_hidden: int | None = None):
         super().__init__()
         self.nc = nc
         self.nl = len(ch)
@@ -32,7 +32,7 @@ class DetectHead(nn.Module):
         self.o2o_grad_scale = o2o_grad_scale
         self.register_buffer("stride", torch.zeros(self.nl), persistent=True)
         c_box = max(16, ch[0] // 4)
-        c_cls = max(ch[0], min(nc, 100))
+        c_cls = cls_hidden or max(ch[0], min(nc, 100))
         self.box = nn.ModuleList(
             nn.Sequential(Conv(c, c_box, 3), Conv(c_box, c_box, 3), nn.Conv2d(c_box, 4, 1)) for c in ch)
         self.cls = nn.ModuleList(
