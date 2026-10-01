@@ -197,6 +197,17 @@ models trained at 640 px. Fine-tuned s scores 69.72 / 69.09 / 67.03 / 63.52 AP e
 rises (25.3 → 31.5), but medium and large objects lose more. The distilled n behaves the same (66.70 → 66.38 →
 64.96 at 640 / 704 / 768).
 
+### Fine-tuning recipe search (YOLO26s → VOC, 640 px, 10 epochs)
+
+| recipe | AP e2e @ epoch 2 / 4 / 6 / 8 / 10 | final AP o2m+NMS | GPU hours |
+|---|---|---|---|
+| **mosaic, mosaic off for last 2 epochs, AdamW lr 4.17e-4** (baseline above) | 54.04 / 60.01 / 64.12 / 68.36 / **69.72** | **70.79** | 1.09 |
+| no mosaic at all | 48.53 / 58.39 / 62.26 / 66.70 / 68.83 | 69.91 | 0.89 |
+
+**Mosaic helps fine-tuning (+0.9 AP)**, even though it speeds data loading up ~1.4× to remove it on the 2-core T4
+VM. The drop below the zero-shot start (68.16 → 48.5–54 AP after 2 epochs) happens with or without mosaic. So it is
+an optimisation shock from the learning rate, not an augmentation effect; a lower-lr run tests this.
+
 ## Reproducing
 
 ```bash
