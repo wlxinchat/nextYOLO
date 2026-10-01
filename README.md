@@ -29,7 +29,7 @@ python tools/prepare_voc.py --src /path/to/VOCdevkit --dst /path/to/VOC   # then
 
 # train (any lever can be flipped with --set)
 python tools/train.py --data data/voc.json --scale n --imgsz 640 --epochs 300 --out runs/voc_n \
-    --set loss.o2o_assign=o2m
+    --set init=yolo26n_nextyolo.pt   # optional: start from COCO weights (class-subset heads)
 
 # evaluate, export (NMS-free ONNX), benchmark
 python tools/val.py --weights runs/voc_n/best.pt --data data/voc.json --imgsz 640
@@ -77,8 +77,10 @@ Training parameter counts are identical to Ultralytics' model summaries for `yol
 | `model.p2_fusion` | `false` | lossless space-to-depth P2 map fused into the P3 neck node | YOLO27 "stronger high-res features"; SPD-Conv |
 | `model.attn_area` | `1` | area attention (split tokens into stripes) in P5 attention | YOLOv12 |
 | `model.o2o_grad_scale` | `0` | let o2o gradients reach the backbone, scaled | ablation |
-| `loss.o2o_assign` | `self` | `o2m` = **AOA**: the o2o positive is the top-1 of the o2m ranking | **nextYOLO** |
-| `loss.cls_loss` / `loss.o2o_cls_loss` | `bce` | `vfl`, `mal`, `qfl` | VarifocalNet, DEIM, GFL |
+| `loss.o2o_assign` | `self` | `o2m` = AOA (o2o positive = top-1 of the o2m ranking), `teacher` — **both measured worse; keep `self`** | nextYOLO (negative result) |
+| `loss.cls_loss` / `loss.o2o_cls_loss` | `bce` | `vfl`, `mal`, `qfl` — **MAL on o2o measured −4.1 AP e2e** | VarifocalNet, DEIM, GFL |
+| `init`, `init_head` | — / `subset` | start from nextYOLO or YOLO26 weights; `subset` slices cls heads by class name — **+7.7 AP e2e** | nextYOLO |
+| `distill.*` | off | dense anchor-aligned KD; `distill.branches=["o2m"]` — never distil the o2o branch (−4.3 AP) | nextYOLO |
 | `loss.stal` | `true` | small GT boxes enlarged to stride₂ for candidate selection | YOLO26 |
 | `loss.prog_loss` | `true` | o2m weight 0.8 → 0.1 linearly over training | YOLO26 |
 | `optimizer` | `musgd` | `sgd`, `adamw` | YOLO26 (Muon: K. Jordan et al.) |

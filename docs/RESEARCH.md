@@ -61,15 +61,23 @@ only within a row.
 ## 4. nextYOLO's position
 
 nextYOLO targets the second and third bullets. It is an independently written, dependency-light implementation of
-the strongest published **CNN + NMS-free** recipe, reproducing YOLO26 exactly: parameter counts match at all five
-scales. Every lever is exposed as a config switch so it can be measured, and new levers are tested on top:
+the strongest published **CNN + NMS-free** recipe, verified against YOLO26 at three levels:
 
-* **AOA (Aligned One-to-One assignment)**, new in nextYOLO: the o2o positive for each object is the top-1 anchor of
-  the *o2m* branch's ranking, not of the o2o branch's own, still-noisy predictions. This enforces YOLOv10's
-  consistent-matching condition exactly and gives the o2o branch a stable target, the same instability that
-  DETR-side methods such as Stable-DINO and Align-DETR address in bipartite matching.
-* **MAL for the o2o branch**, from DEIM.
-* **YOLO27-style dual-scale head** and **lossless SPD P2→P3 fusion** ("strengthened high-resolution features").
+* parameter counts match at all five scales;
+* official weights load and reproduce Ultralytics' outputs to 2.4e-4;
+* from-scratch training matches Ultralytics within run-to-run noise.
+
+Every lever is a config switch, so it can be measured rather than assumed. Several promising-looking levers were
+tested on top of YOLO26, and most did **not** help a dense one-to-one head:
+
+* **AOA (Aligned One-to-One assignment)**, proposed here: choose the o2o positive from the o2m branch's ranking. It
+  scored −2.5 AP at half schedule.
+* **MAL (matchability-aware loss)** from DEIM: −4.1 AP on the NMS-free branch.
+* **Dense distillation of the one-to-one branch** from a stronger teacher: −4.3 AP.
+
+All three point to the same principle: *a one-to-one head must stay self-consistent*. What did help, by a large
+margin, is **class-subset head transfer** from COCO-pretrained weights (+7.7 AP e2e over re-initialised heads).
+YOLO27-style dual-scale heads and lossless SPD P2→P3 fusion are also implemented.
 
 The empirical results, and what they do and do not show at CPU-feasible budgets, are in
 [`EXPERIMENTS.md`](EXPERIMENTS.md).
