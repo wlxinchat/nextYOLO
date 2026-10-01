@@ -225,7 +225,7 @@ def gflops(model: nn.Module, imgsz: int = 640) -> float:
     hooks = [m.register_forward_hook(conv_hook) for m in model.modules() if isinstance(m, nn.Conv2d)]
     hooks += [m.register_forward_hook(attn_hook) for m in model.modules() if isinstance(m, MHSA)]
     with torch.no_grad():
-        model(torch.zeros(1, 3, imgsz, imgsz))
+        model(torch.zeros(1, 3, imgsz, imgsz, device=next(model.parameters()).device))
     for h in hooks:
         h.remove()
     return 2 * macs / 1e9

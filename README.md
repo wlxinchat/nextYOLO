@@ -44,6 +44,19 @@ python tools/convert_ultralytics.py --weights yolo26n.pt --out yolo26n_nextyolo.
 python tools/val.py --ultralytics yolo26n.pt --data data/voc.json --imgsz 640   # zero-shot COCO -> VOC
 ```
 
+### Running on a GPU (Google Colab)
+
+The trainer uses CUDA automatically when it's available, with bf16 autocast on A100/L4/H100 and fp16 with gradient
+scaling on T4. `tools/colab_job.py` is a self-contained job: it clones this repo, downloads and converts VOC, trains a
+preset (`smoke`, `voc_scratch`, `voc_ft`), and archives the results. It can be launched two ways:
+
+* **Notebook:** open [`notebooks/nextyolo_colab.ipynb`](https://colab.research.google.com/github/wlxinchat/nextYOLO/blob/claude/awesome-maxwell-zfo3s4/notebooks/nextyolo_colab.ipynb)
+  in Colab, select a GPU runtime and run the cells.
+* **Terminal / agents:** use Google's [Colab CLI](https://github.com/googlecolab/google-colab-cli) (Python ≥ 3.12):
+  `uv tool install google-colab-cli`, then `colab run --gpu A100 tools/colab_job.py --preset voc_scratch`. The CLI
+  signs in with a copy-paste OAuth flow that works on headless machines. Network-restricted sandboxes must allow
+  `colab.research.google.com` and `*.colab.dev`.
+
 Dataset format: `images/<split>/*.jpg` with `labels/<split>/*.txt` (`cls cx cy w h`, normalised), described by a JSON
 file such as [`data/voc.json`](data/voc.json).
 

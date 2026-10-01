@@ -33,11 +33,13 @@ def evaluate(model, dataset: YOLODataset, batch_size: int = 32, workers: int = 2
              mode: str = "e2e", nms_iou: float = 0.7, max_images: int | None = None, verbose: bool = False) -> dict:
     """mode: 'e2e' (model returns (B, K, 6) NMS-free) or 'nms' (model returns dense (B, A, 4+nc))."""
     model.eval()
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=workers, collate_fn=collate)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=workers, collate_fn=collate,
+                        pin_memory=torch.cuda.is_available())
     ev = COCOEvaluator(nc=model.cfg.nc if hasattr(model, "cfg") else dataset.nc)
     t_model, n_img = 0.0, 0
+    device = next(model.parameters()).device
     for imgs, _, metas in loader:
-        x = imgs.float() / 255
+        x = imgs.to(device, non_blocking=True).float() / 255
         t0 = time.perf_counter()
         pred = model(x)
         t_model += time.perf_counter() - t0

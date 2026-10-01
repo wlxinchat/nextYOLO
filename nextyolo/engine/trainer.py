@@ -27,6 +27,15 @@ from .evaluator import evaluate
 STOPPED_EXIT_CODE = 3  # process exit code for a graceful, resumable stop (see NEXTYOLO_STOP_FILE)
 
 
+def _amp_dtype(mode: str, device: torch.device):
+    """Autocast dtype for training: None on CPU / when off; bf16 where supported; fp16 (+GradScaler) otherwise."""
+    if mode == "off" or device.type != "cuda":
+        return None
+    if mode == "fp16" or (mode == "auto" and not torch.cuda.is_bf16_supported()):
+        return torch.float16
+    return torch.bfloat16
+
+
 def should_pause(epoch_seconds: float) -> bool:
     """True if NEXTYOLO_STOP_FILE exists, or if another epoch of this length would overrun NEXTYOLO_DEADLINE
     (unix time). Lets a job scheduler split long runs into bounded segments without losing partial epochs."""
@@ -76,6 +85,8 @@ class TrainConfig:
     compile: bool = False          # torch.compile the training forward (+~25% CPU throughput)
     resume: bool = True            # continue from <out>/last.pt if it holds a full training state
     channels_last: bool = True
+    device: str = "auto"           # "auto" = cuda if available, else cpu
+    amp: str = "auto"              # "auto": bf16 on GPUs that support it, else fp16 + grad scaling; "off" on CPU
 
 
 class ModelEMA:
@@ -168,14 +179,18 @@ class Trainer:
         self.out.mkdir(parents=True, exist_ok=True)
         nc = len(cfg.names)
         self.model = self._init_model(nc) if cfg.init else NextYOLO(ModelConfig(nc=nc, **cfg.model))
+        self.device = torch.device("cuda" if cfg.device == "auto" and torch.cuda.is_available()
+                                   else "cpu" if cfg.device == "auto" else cfg.device)
+        self.amp_dtype = _amp_dtype(cfg.amp, self.device)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.amp_dtype == torch.float16)
         self.mem_format = torch.channels_last if cfg.channels_last else torch.contiguous_format
-        self.model = self.model.to(memory_format=self.mem_format)
+        self.model = self.model.to(self.device, memory_format=self.mem_format)
         self.fwd = torch.compile(self.model) if cfg.compile else self.model
         self.dcfg = DistillConfig(**cfg.distill)
         self.teacher = None
         if self.dcfg.teacher:
             t, how = load_for_classes(self.dcfg.teacher, cfg.names, "subset")
-            t = t.eval().to(memory_format=self.mem_format)
+            t = t.eval().to(self.device, memory_format=self.mem_format)
             for p in t.parameters():
                 p.requires_grad_(False)
             t.head.return_raw = True
@@ -214,7 +229,7 @@ class Trainer:
     def _loader(self):
         return DataLoader(self.train_set, batch_size=self.cfg.batch, shuffle=True, num_workers=self.cfg.workers,
                           collate_fn=collate, drop_last=True, persistent_workers=self.cfg.workers > 0,
-                          worker_init_fn=_worker_init)
+                          worker_init_fn=_worker_init, pin_memory=self.device.type == "cuda")
 
     def log(self, msg: str) -> None:
         line = f"[{time.strftime('%H:%M:%S')}] {msg}"
@@ -271,25 +286,29 @@ class Trainer:
                         g["lr"] = float(np.interp(ni, xi, [start, g["initial_lr"] * self.lr_factor(epoch)]))
                         if "momentum" in g:
                             g["momentum"] = float(np.interp(ni, xi, [cfg.warmup_momentum, cfg.momentum]))
-                x = (imgs.float() / 255).contiguous(memory_format=self.mem_format)
-                preds = self.fwd(x)
-                t_preds = None
-                if self.teacher is not None:
-                    with torch.no_grad():
-                        t_preds = self.teacher(x)
+                x = (imgs.to(self.device, non_blocking=True).float() / 255).contiguous(memory_format=self.mem_format)
+                with torch.autocast(self.device.type, dtype=self.amp_dtype, enabled=self.amp_dtype is not None):
+                    preds = self.fwd(x)
+                    t_preds = None
+                    if self.teacher is not None:
+                        with torch.no_grad():
+                            t_preds = self.teacher(x)
                 loss, items = self.criterion(preds, targets, (cfg.imgsz, cfg.imgsz), teacher=t_preds)
                 if t_preds is not None:
                     l_kd, kd_items = distill_loss(preds, t_preds, self.dcfg)
                     loss = loss + l_kd
+                    kd_items = kd_items.cpu()
                     kd_run = kd_items if i == 0 else kd_run * (i / (i + 1)) + kd_items / (i + 1)
-                loss.backward()
+                self.scaler.scale(loss).backward()
                 if ni - last_step >= self.accumulate:
+                    self.scaler.unscale_(self.opt)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
-                    self.opt.step()
+                    self.scaler.step(self.opt)
+                    self.scaler.update()
                     self.opt.zero_grad(set_to_none=True)
                     self.ema.update(self.model)
                     last_step = ni
-                vec = torch.cat([items["o2m"], items.get("o2o", torch.zeros(3))])
+                vec = torch.cat([items["o2m"], items.get("o2o", torch.zeros(3, device=items["o2m"].device))]).cpu()
                 run = run * (i / (i + 1)) + vec / (i + 1)
                 if i % self.cfg.log_interval == 0:
                     ips = (i + 1) * cfg.batch / (time.time() - t_ep)
