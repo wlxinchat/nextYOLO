@@ -179,6 +179,24 @@ NMS-free and +0.79 AP with NMS** (AP75 +1.07, AP_S +1.67). It is ahead at every 
 section C (0.57 vs 2.96), which supports the earlier diagnosis that the COCO teacher's targets conflicted with VOC
 labels. Caveat: one seed per arm; the per-epoch consistency is the main evidence that the gain is real.
 
+### Accuracy frontier and test resolution (GPU evaluation, VOC07 test)
+
+The GPU evaluation reproduces the CPU numbers exactly (YOLO26s zero-shot 68.16, fine-tuned s 69.72), so results from
+the two machines are comparable.
+
+| model @ 640 px | AP e2e | AP50 e2e | AP_S e2e | AP o2m+NMS |
+|---|---|---|---|---|
+| YOLO26s zero-shot | 68.16 | 85.55 | 23.72 | 68.93 |
+| nextYOLO-s fine-tuned (above) | 69.72 | 87.63 | 25.28 | 70.79 |
+| YOLO26m zero-shot | 70.44 | 86.88 | 22.47 | 71.21 |
+| YOLO26l zero-shot | 71.27 | 87.25 | 25.83 | 71.78 |
+| YOLO26x zero-shot | **72.27** | 87.58 | 31.31 | **72.96** |
+
+Capacity dominates: m/l/x beat the fine-tuned s without any VOC training. **Larger test resolution does not help**
+models trained at 640 px. Fine-tuned s scores 69.72 / 69.09 / 67.03 / 63.52 AP e2e at 640 / 704 / 768 / 832. AP_S
+rises (25.3 → 31.5), but medium and large objects lose more. The distilled n behaves the same (66.70 → 66.38 →
+64.96 at 640 / 704 / 768).
+
 ## Reproducing
 
 ```bash
