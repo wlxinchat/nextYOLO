@@ -11,7 +11,7 @@ matches pycocotools to 1e-6 (tests/test_metrics.py). Every model in a table, Ult
 same evaluator on the same letterboxed inputs. "e2e" means the NMS-free one-to-one branch (top-k, no NMS). "o2m+NMS"
 means the dense branch followed by class-aware NMS at IoU 0.7.
 
-_Results are filled in as runs finish; see the status column._
+All runs below completed; the per-run summaries, learning curves and eval JSONs are in [`results/`](../results).
 
 ## A. Training from scratch — is nextYOLO a faithful YOLO26?
 
@@ -47,7 +47,7 @@ baseline for all later from-scratch ablations.
 | **AOA** — o2o positive = top-1 of the o2m ranking (new; vs v1) | 8.87 | stopped at epoch 6 | — | **−2.51** @ epoch 6 | negative |
 | baseline, recipe v2 (mean of 2 seeds) | 12.27 | 22.08 | 25.02 | — | |
 | **MAL** for the o2o branch (DEIM's matchability-aware loss; vs v2) | 9.84 | 18.02 | 24.46 | **−4.06** | negative |
-| YOLO27-style dual-scale head, P3+P5 (vs v2) | | | | | queued |
+| YOLO27-style dual-scale head, P3+P5 only (vs v2) | 10.92 | 20.98 | 23.59 | **−1.10** (−1.43 o2m+NMS) | negative for accuracy; −15% latency |
 
 **AOA is a negative result.** Forcing the one-to-one head to fire where the *one-to-many* head ranks best was 2.5 AP
 worse at half schedule; only AP_S improved (3.12 vs 1.99). The likely explanation: with self-assignment
@@ -55,6 +55,10 @@ worse at half schedule; only AP_S improved (3.12 vs 1.99). The likely explanatio
 choice reinforces itself. AOA picks anchors where the o2o box is still poor, which lowers the IoU-aware targets and
 contradicts the head's own ranking. The comparison is at equal schedule position (same LR schedule, both evaluated at
 epoch 6); the run was not continued, to save compute.
+
+**The dual-scale head trades accuracy for speed.** Dropping the P4 output (YOLO27 n/s style) costs 1.1 AP e2e and
+1.4 AP o2m+NMS at this scale, and makes ONNX inference 15% faster (20.4 vs 23.9 ms, section D). YOLO27 pairs the
+dual-scale head with "strengthened high-resolution features" to make up the loss; removing P4 alone does not.
 
 **MAL is also a negative result for dense NMS-free heads** (−4.1 AP e2e, −0.6 AP o2m+NMS). MAL down-weights negatives
 by p^γ, focal-style. In a dense one-to-one head, the hardest negatives are the near-duplicate neighbours of each
@@ -74,6 +78,8 @@ budget), 0.5 warmup epochs, and mosaic off for the last epoch.
 |---|---|---|---|---|---|
 | YOLO26n COCO weights, zero-shot (class-subset heads, no VOC training) | 56.54 | 75.78 | — | — | done |
 | YOLO26s COCO weights, zero-shot (distillation teacher) | 65.45 | 83.52 | — | — | done |
+| YOLO26n COCO weights, zero-shot, **640 px** | 62.61 | 81.36 | — | — | done |
+| YOLO26s COCO weights, zero-shot, **640 px** | **68.16** | **85.55** | — | — | done |
 | Ultralytics fine-tune of yolo26n.pt (its trainer; cls heads re-initialised for 20 classes) | 47.67 | 65.79 | 54.55 | 75.28 | done |
 | **nextYOLO fine-tune, class-subset head init** | **56.96** | **76.95** | **58.08** | **78.41** | done |
 | nextYOLO fine-tune, re-initialised cls heads (isolates the head-init effect) | 49.22 | 67.83 | 55.40 | 76.12 | done |
@@ -127,6 +133,21 @@ score are best, so that targets, scores and box quality reinforce each other. An
 should fire — another branch, another model — breaks that consistency, even when the external opinion comes from a
 stronger model. For dual-head NMS-free detectors: **distil or regularise the dense branch, and leave the one-to-one
 branch to its self-assigned ground-truth loss.**
+
+## D. Inference cost (NMS-free, batch 1, 4 CPU threads, 640 px)
+
+| scale | variant | params (inference) | GFLOPs | PyTorch eager ms | ONNX Runtime ms |
+|---|---|---|---|---|---|
+| n | default (P3/P4/P5) | 2.409M | 5.48 | 58.9 | **23.9** |
+| n | dual-scale (P3/P5) | 2.363M | 5.33 | 45.2 | 20.4 |
+| n | + SPD P2 fusion | 2.429M | 5.74 | 49.9 | 30.4 |
+| s | default | 9.496M | 20.93 | 108.0 | **57.6** |
+| s | dual-scale | 9.349M | 20.47 | 95.0 | 60.9 |
+| s | + SPD P2 fusion | 9.578M | 21.98 | 105.0 | 74.8 |
+
+The exported graph is convolutions + top-k + gathers, with no NMS and no post-processing. Eager PyTorch timings on
+CPU are noisy; the ONNX Runtime numbers are the reliable ones. SPD P2 fusion adds only 5% FLOPs but 27% ONNX latency,
+because pixel-unshuffle at high resolution is memory-bound. It was not trained, given that cost.
 
 ## Reproducing
 
