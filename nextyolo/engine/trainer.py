@@ -31,7 +31,9 @@ def _amp_dtype(mode: str, device: torch.device):
     """Autocast dtype for training: None on CPU / when off; bf16 where supported; fp16 (+GradScaler) otherwise."""
     if mode == "off" or device.type != "cuda":
         return None
-    if mode == "fp16" or (mode == "auto" and not torch.cuda.is_bf16_supported()):
+    # Native bf16 needs compute capability >= 8.0 (Ampere+). torch.cuda.is_bf16_supported() also reports True for
+    # emulated bf16 (e.g. T4 / Turing), which is far slower than fp16 there.
+    if mode == "fp16" or (mode == "auto" and torch.cuda.get_device_capability(device)[0] < 8):
         return torch.float16
     return torch.bfloat16
 
