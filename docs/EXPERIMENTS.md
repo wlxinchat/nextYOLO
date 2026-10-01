@@ -206,7 +206,23 @@ rises (25.3 → 31.5), but medium and large objects lose more. The distilled n b
 
 **Mosaic helps fine-tuning (+0.9 AP)**, even though it speeds data loading up ~1.4× to remove it on the 2-core T4
 VM. The drop below the zero-shot start (68.16 → 48.5–54 AP after 2 epochs) happens with or without mosaic. So it is
-an optimisation shock from the learning rate, not an augmentation effect; a lower-lr run tests this.
+an optimisation shock from the learning rate, not an augmentation effect.
+
+**Lowering the fine-tuning lr removes the drop and is the biggest recipe gain found.**
+
+| run | lr | AP e2e by epoch | final AP o2m+NMS |
+|---|---|---|---|
+| YOLO26s → VOC, 640 px (GPU) | 4.17e-4 | 54.04 (ep 2) … 69.72 (ep 10) | 70.79 |
+| YOLO26s → VOC, 640 px (GPU) | **1e-4** | **69.35 (ep 2)**, then the VM was reclaimed | — |
+| YOLO26n → VOC, 320 px, 3 ep (CPU) | 4.17e-4 | 50.47 / 53.70 / 56.96 | 58.08 |
+| YOLO26n → VOC, 320 px, 3 ep (CPU) | **1e-4** | **56.54 / 58.14 / 58.96** | **59.42** |
+| YOLO26n → VOC, 320 px, 3 ep (CPU) | 3e-5 | 56.51 / 57.61 / 57.92 | 58.30 |
+
+The lr that Ultralytics' `optimizer=auto` picks for short schedules (4.17e-4 for 20 classes) is too high to fine-tune
+a model that already knows the classes. It wipes out ~6–14 AP of pretrained accuracy in the first epoch, and the rest
+of the schedule is spent recovering it. At 1e-4 the start is preserved and every epoch adds accuracy: +2.0 AP e2e at
+n/320 after 3 epochs, and after 2 epochs the s/640 run is already level with the old recipe's 10-epoch result. 3e-5
+is too conservative.
 
 ## Reproducing
 
