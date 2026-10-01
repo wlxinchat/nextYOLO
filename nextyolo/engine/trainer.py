@@ -219,6 +219,9 @@ class Trainer:
             g["initial_lr"] = g["lr"]
         self.ema = ModelEMA(self.model, cfg.ema_decay, cfg.ema_tau)
         self.history: list[dict] = []
+        dev = torch.cuda.get_device_name(self.device) if self.device.type == "cuda" else "cpu"
+        self.log(f"device: {self.device} ({dev}), amp: {self.amp_dtype or 'off'}, compile: {cfg.compile}, "
+                 f"workers: {cfg.workers}")
         info = self.model.info(cfg.imgsz)
         self.log(f"model: {info['params'] / 1e6:.3f}M params, {info['gflops']:.2f} GFLOPs@{cfg.imgsz} | "
                  f"cfg {json.dumps(asdict(cfg), default=str)}")
