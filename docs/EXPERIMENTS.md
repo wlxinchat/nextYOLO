@@ -149,6 +149,26 @@ The exported graph is convolutions + top-k + gathers, with no NMS and no post-pr
 CPU are noisy; the ONNX Runtime numbers are the reliable ones. SPD P2 fusion adds only 5% FLOPs but 27% ONNX latency,
 because pixel-unshuffle at high resolution is memory-bound. It was not trained, given that cost.
 
+## E. GPU runs (Google Colab, free Tesla T4)
+
+These runs were launched from this sandbox with the Google Colab CLI (`tools/colab_job.py`). Settings: 640 px, 10
+epochs, AdamW (lr 4.17e-4), fp16 autocast, batch 32 (s) / 64 (n), mosaic off for the last 2 epochs, class-subset head
+initialisation from the official COCO weights. The free T4 has only 2 CPU cores, so the augmentation pipeline caps
+training at ~45 img/s at 640 px, and the GPU waits on data.
+
+| model | AP e2e | AP50 e2e | AP o2m+NMS | AP50 o2m+NMS | GPU hours |
+|---|---|---|---|---|---|
+| YOLO26s COCO weights, zero-shot (reference, section C) | 68.16 | 85.55 | — | — | — |
+| **nextYOLO-s fine-tuned on VOC** | **69.72** | **87.63** | **70.79** | **88.70** | 1.09 |
+
+Learning curve (AP e2e by epoch): 54.04 (2) → 60.01 (4) → 64.12 (6) → 68.36 (8) → 69.72 (10). As in the CPU runs,
+mosaic fine-tuning first drops below the zero-shot start; the last two epochs, without mosaic and at the lowest lr,
+bring the largest gain.
+
+The free VM was reclaimed after about an hour, during epoch 8. The run resumed on a fresh T4 from the epoch-7
+checkpoint, which had been backed up to this sandbox every few minutes. The 160 MB checkpoint was uploaded in 20 MB
+chunks (single large uploads were cut off) and verified by SHA-256.
+
 ## Reproducing
 
 ```bash
