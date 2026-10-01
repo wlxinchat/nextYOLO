@@ -115,6 +115,7 @@ def main():
     ap.add_argument("--imgsz", type=int)
     ap.add_argument("--batch", type=int)
     ap.add_argument("--scale", default="n")
+    ap.add_argument("--init", default=None, help="official weights to fine-tune from, e.g. yolo26s (voc_ft preset)")
     ap.add_argument("--set", nargs="*", default=[], help="extra overrides passed to tools/train.py")
     a = ap.parse_args()
 
@@ -132,8 +133,9 @@ def main():
     name = a.name or a.preset
     out = work / "runs" / name
     sets = [f"workers={min(8, os.cpu_count() or 2)}", "compile=true", *p["sets"]]
-    if p.get("init"):
-        sets.append(f"init={get_init_weights(work, repo, p['init'])}")
+    init = a.init or p.get("init")
+    if init:
+        sets.append(f"init={get_init_weights(work, repo, init)}")
     sets += a.set
     cmd = [sys.executable, str(repo / "tools" / "train.py"), "--data", str(data), "--scale", a.scale,
            "--imgsz", str(a.imgsz or p["imgsz"]), "--epochs", str(a.epochs or p["epochs"]),
