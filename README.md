@@ -114,7 +114,10 @@ budgets, not COCO-scale state of the art. Full details, including what each numb
 
 | model | 320 px | 640 px | how |
 |---|---|---|---|
-| YOLO26s COCO weights, class-subset heads | 65.45 / 83.52 | **68.16 / 85.55** | zero-shot, no VOC training |
+| **nextYOLO-s fine-tuned from YOLO26s (10 epochs, Colab T4)** | — | **69.72 / 87.63** (70.79 / 88.70 with NMS) | class-subset head init |
+| **nextYOLO-n fine-tuned + distilled from the fine-tuned s (o2m only)** | — | **66.70 / 85.44** (67.54 / 86.48 with NMS) | class-subset init + KD |
+| nextYOLO-n fine-tuned from YOLO26n (10 epochs, Colab T4) | — | 65.97 / 85.02 (66.75 / 85.93 with NMS) | class-subset head init |
+| YOLO26s COCO weights, class-subset heads | 65.45 / 83.52 | 68.16 / 85.55 | zero-shot, no VOC training |
 | YOLO26n COCO weights, class-subset heads | 56.54 / 75.78 | 62.61 / 81.36 | zero-shot, no VOC training |
 | nextYOLO-n fine-tuned from YOLO26n (3 epochs) | 56.96 / 76.95 (58.08 / 78.41 with NMS) | — | class-subset head init |
 | Ultralytics fine-tune of YOLO26n (3 epochs) | 47.67 / 65.79 (54.55 / 75.28 with NMS) | — | standard trainer, cls heads re-initialised |
@@ -126,7 +129,7 @@ budgets, not COCO-scale state of the art. Full details, including what each numb
 | Parity with YOLO26 requires its 3× cls-head lr under MuSGD (easy to miss) | +0.84 AP NMS-free |
 | **Class-subset head transfer** from COCO weights vs re-initialised heads | **+7.7 AP** NMS-free, +2.7 AP with NMS |
 | The **one-to-one head must stay self-consistent**: an external ranking for its assignment (AOA from o2m, or from a teacher) or a distilled o2o score map | −2.5 to −6.5 AP NMS-free |
-| Distil only the dense o2m branch (o2o left alone) | neutral (−0.2) with a zero-shot COCO teacher |
+| Distil only the dense o2m branch (o2o left alone) | neutral (−0.2) with a zero-shot COCO teacher; **+0.7 AP** with a VOC-fine-tuned teacher (640 px, GPU) |
 | DEIM's MAL loss on a dense o2o head (it down-weights the near-duplicate negatives an NMS-free head must suppress) | −4.1 AP NMS-free |
 | YOLO27-style dual-scale head without compensation | −1.1 AP, −15% latency |
 | NMS-free inference cost, nextYOLO-n @640, 4-thread CPU, ONNX Runtime | 23.9 ms, no post-processing |

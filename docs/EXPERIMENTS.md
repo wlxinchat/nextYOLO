@@ -160,6 +160,9 @@ training at ~45 img/s at 640 px, and the GPU waits on data.
 |---|---|---|---|---|---|
 | YOLO26s COCO weights, zero-shot (reference, section C) | 68.16 | 85.55 | — | — | — |
 | **nextYOLO-s fine-tuned on VOC** | **69.72** | **87.63** | **70.79** | **88.70** | 1.09 |
+| YOLO26n COCO weights, zero-shot (reference, section C) | 62.61 | 81.36 | — | — | — |
+| nextYOLO-n fine-tuned on VOC | 65.97 | 85.02 | 66.75 | 85.93 | 0.95 |
+| **nextYOLO-n fine-tuned + distillation from the VOC-tuned nextYOLO-s (o2m branch only)** | **66.70** | **85.44** | **67.54** | **86.48** | 1.03 |
 
 Learning curve (AP e2e by epoch): 54.04 (2) → 60.01 (4) → 64.12 (6) → 68.36 (8) → 69.72 (10). As in the CPU runs,
 mosaic fine-tuning first drops below the zero-shot start; the last two epochs, without mosaic and at the lowest lr,
@@ -168,6 +171,13 @@ bring the largest gain.
 The free VM was reclaimed after about an hour, during epoch 8. The run resumed on a fresh T4 from the epoch-7
 checkpoint, which had been backed up to this sandbox every few minutes. The 160 MB checkpoint was uploaded in 20 MB
 chunks (single large uploads were cut off) and verified by SHA-256.
+
+**Distillation works once the teacher is adapted and the o2o branch is left alone.** With the VOC-fine-tuned s
+model (69.72 AP) as teacher and distillation applied only to the dense o2m branch, the n student gains **+0.73 AP
+NMS-free and +0.79 AP with NMS** (AP75 +1.07, AP_S +1.67). It is ahead at every evaluation point: +0.82, +2.68,
++0.46, +0.75 and +0.73 AP at epochs 2/4/6/8/10. The KD loss starts 5× lower than with the zero-shot COCO teacher in
+section C (0.57 vs 2.96), which supports the earlier diagnosis that the COCO teacher's targets conflicted with VOC
+labels. Caveat: one seed per arm; the per-epoch consistency is the main evidence that the gain is real.
 
 ## Reproducing
 

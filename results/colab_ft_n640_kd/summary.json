@@ -1,0 +1,122 @@
+{
+ "best_mAP": 0.6670446231847248,
+ "best": {
+  "mAP": 0.6670446231847248,
+  "mAP50": 0.8543700591989382,
+  "mAP75": 0.7374594040519543,
+  "APs": 0.2611704951383816,
+  "APm": 0.4777875156898416,
+  "APl": 0.7310964492092524,
+  "per_class_ap": [
+   0.7280482714837231,
+   0.7185194408260716,
+   0.6374734189878746,
+   0.530285293237467,
+   0.569038847926661,
+   0.8160499499731642,
+   0.7559200466463363,
+   0.7776012610796805,
+   0.5018009329251968,
+   0.7014204989784094,
+   0.6575905691735128,
+   0.7298506117843414,
+   0.754511573150588,
+   0.6945392993956758,
+   0.6665511028658413,
+   0.37004674486395345,
+   0.6653016665141668,
+   0.6717034714364231,
+   0.7293418813855084,
+   0.665297581059901
+  ],
+  "eval_time_s": 15.259502721999525,
+  "model_ms_per_img": 1.776217090065458
+ },
+ "hours": 1.0279314691490598,
+ "config": {
+  "train": [
+   "/content/datasets/VOC/images/train2007",
+   "/content/datasets/VOC/images/val2007",
+   "/content/datasets/VOC/images/train2012",
+   "/content/datasets/VOC/images/val2012"
+  ],
+  "val": [
+   "/content/datasets/VOC/images/test2007"
+  ],
+  "names": [
+   "aeroplane",
+   "bicycle",
+   "bird",
+   "boat",
+   "bottle",
+   "bus",
+   "car",
+   "cat",
+   "chair",
+   "cow",
+   "diningtable",
+   "dog",
+   "horse",
+   "motorbike",
+   "person",
+   "pottedplant",
+   "sheep",
+   "sofa",
+   "train",
+   "tvmonitor"
+  ],
+  "out": "/content/runs/ft_n640_kd",
+  "epochs": 10,
+  "batch": 64,
+  "nbs": 64,
+  "imgsz": 640,
+  "optimizer": "adamw",
+  "cls_lr_mult": 3.0,
+  "lr0": 0.000417,
+  "lrf": 0.01,
+  "momentum": 0.9,
+  "weight_decay": 0.0005,
+  "warmup_epochs": 0.5,
+  "warmup_momentum": 0.8,
+  "warmup_bias_lr": 0.0,
+  "close_mosaic": 2,
+  "ema_decay": 0.9999,
+  "ema_tau": 2000,
+  "workers": 2,
+  "threads": 0,
+  "eval_interval": 2,
+  "log_interval": 50,
+  "eval_max_images": null,
+  "seed": 0,
+  "hyp": {},
+  "model": {
+   "scale": "n"
+  },
+  "loss": {},
+  "max_train_images": null,
+  "time_limit_h": null,
+  "distill": {
+   "teacher": "/content/runs/ft_s640/best.pt",
+   "branches": [
+    "o2m"
+   ]
+  },
+  "init": "/content/yolo26n_nextyolo.pt",
+  "init_head": "subset",
+  "compile": false,
+  "resume": true,
+  "channels_last": true,
+  "device": "auto",
+  "amp": "auto"
+ },
+ "final_o2m_nms": {
+  "mAP": 0.6753819129335493,
+  "mAP50": 0.8648496886491055,
+  "mAP75": 0.7481533621221295,
+  "APs": 0.2665260000701485,
+  "APm": 0.487674609599705,
+  "APl": 0.7378218749761409,
+  "eval_time_s": 15.382643462000487,
+  "model_ms_per_img": 1.4940314222541007
+ }
+}
