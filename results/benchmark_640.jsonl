@@ -4,3 +4,6 @@
 {"scale": "s", "variant": "default", "imgsz": 640, "train_params_M": 10.009784, "infer_params_M": 9.49614, "gflops": 20.9332224, "torch_ms": 108.03407599996717, "onnxruntime_ms": 57.62132499876316, "threads": 4}
 {"scale": "s", "variant": "dual_scale", "imgsz": 640, "train_params_M": 9.71496, "infer_params_M": 9.349432, "gflops": 20.4662784, "torch_ms": 94.97422200001893, "onnxruntime_ms": 60.92893099958019, "threads": 4}
 {"scale": "s", "variant": "p2", "imgsz": 640, "train_params_M": 10.09196, "infer_params_M": 9.578188, "gflops": 21.9817984, "torch_ms": 105.03373200117494, "onnxruntime_ms": 74.7996409991174, "threads": 4}
+{"scale": "m", "variant": "default", "imgsz": 640, "train_params_M": 21.896248, "infer_params_M": 20.411132, "gflops": 68.425728, "torch_ms": 373.13696399999685, "onnxruntime_ms": 205.6054440000139, "threads": 4}
+{"scale": "l", "variant": "default", "imgsz": 640, "train_params_M": 26.299704, "infer_params_M": 24.80742, "gflops": 86.7956736, "torch_ms": 454.89484500001254, "onnxruntime_ms": 243.89464999998722, "threads": 4}
+{"scale": "x", "variant": "default", "imgsz": 640, "train_params_M": 58.993368, "infer_params_M": 55.725948, "gflops": 194.4179712, "torch_ms": 824.9540559999957, "onnxruntime_ms": 509.6717330000047, "threads": 4}

@@ -144,10 +144,27 @@ branch to its self-assigned ground-truth loss.**
 | s | default | 9.496M | 20.93 | 108.0 | **57.6** |
 | s | dual-scale | 9.349M | 20.47 | 95.0 | 60.9 |
 | s | + SPD P2 fusion | 9.578M | 21.98 | 105.0 | 74.8 |
+| m | default | 20.411M | 68.43 | 373.1 | 205.6 |
+| l | default | 24.807M | 86.80 | 454.9 | 243.9 |
+| x | default | 55.726M | 194.42 | 825.0 | 509.7 |
 
 The exported graph is convolutions + top-k + gathers, with no NMS and no post-processing. Eager PyTorch timings on
 CPU are noisy; the ONNX Runtime numbers are the reliable ones. SPD P2 fusion adds only 5% FLOPs but 27% ONNX latency,
 because pixel-unshuffle at high resolution is memory-bound. It was not trained, given that cost.
+
+**Accuracy vs. CPU latency** (VOC07 test AP NMS-free at 640 px, best result per scale; ONNX Runtime, 4 threads):
+
+| scale | ONNX ms | zero-shot (COCO weights, class-subset heads) | best fine-tuned |
+|---|---|---|---|
+| n | 23.9 | 62.61 | 66.70 (lr 4.17e-4, 10 ep, KD from fine-tuned s) |
+| s | 57.6 | 68.16 | 69.72 (lr 4.17e-4, 10 ep) |
+| m | 205.6 | 70.44 | — |
+| l | 243.9 | 71.27 | — |
+| x | 509.7 | 72.27 | **76.10** (lr 1e-4, 3 ep) |
+
+Each scale step costs 2–3.5× latency for +1–5.5 AP. On a CPU, only n and s are real-time at 640 px. The fine-tuned x
+(76.1 AP, ~0.5 s/image on 4 CPU threads) is the accuracy ceiling to distil into them. The n and s numbers above still
+use the older lr 4.17e-4 recipe, so their fine-tuned values are conservative.
 
 ## E. GPU runs (Google Colab, free Tesla T4)
 
