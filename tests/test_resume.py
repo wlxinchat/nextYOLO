@@ -57,6 +57,57 @@ def test_resume_after_interruption(tmp_path, monkeypatch):
     assert "nothing to do" in (tmp_path / "run" / "log.txt").read_text()
 
 
+def test_epoch_sampler_resume_replays_the_rest_of_the_epoch():
+    from nextyolo.engine.trainer import EpochSampler
+
+    s = EpochSampler(10, seed=3)
+    s.set_epoch(2)
+    full = list(s)
+    s.set_epoch(2, start=4)
+    assert list(s) == full[4:] and len(s) == 6
+    s.set_epoch(3)
+    assert sorted(list(s)) == list(range(10)) and list(s) != full
+
+
+def test_resume_mid_epoch(tmp_path, monkeypatch):
+    """A preempted run continues from a mid-epoch checkpoint and trains each remaining batch exactly once."""
+    from nextyolo.engine import trainer as tr
+
+    train, val = _synthetic_dataset(tmp_path / "data")
+    cfg = dict(train=train, val=val, names=["a", "b"], out=str(tmp_path / "run"), epochs=2, batch=2, nbs=2,
+               imgsz=64, workers=0, warmup_epochs=0, close_mosaic=0, eval_interval=2, save_interval_min=1e-9)
+
+    class Interrupt(Exception):
+        pass
+
+    orig_save = Trainer.save
+    seen = []
+
+    def crash_at_second_mid_checkpoint(self, name, epoch, full=None):
+        orig_save(self, name, epoch, full)
+        if full and full.get("iter") == 2 and epoch == 0:
+            seen.append(full["last_step"])
+            raise Interrupt
+
+    monkeypatch.setattr(Trainer, "save", crash_at_second_mid_checkpoint)
+    with pytest.raises(Interrupt):
+        Trainer(TrainConfig(**cfg)).train()
+    monkeypatch.setattr(Trainer, "save", orig_save)
+
+    batches = []
+    orig_iter = tr.EpochSampler.__iter__
+    monkeypatch.setattr(tr.EpochSampler, "__iter__", lambda s: iter(batches.append((s.epoch, s.start)) or
+                                                                     orig_iter(s)))
+    t = Trainer(TrainConfig(**cfg))
+    t.train()
+    log = (tmp_path / "run" / "log.txt").read_text()
+    assert "resumed from" in log and "in epoch 1 at iteration 2" in log
+    assert batches[0] == (0, 4)          # epoch 1 continues after the 2 trained batches (2 images each)
+    assert batches[1] == (1, 0)          # and epoch 2 starts from the top
+    assert seen == [1] and [h["epoch"] for h in t.history] == [1, 2]
+    assert (tmp_path / "run" / "summary.json").exists()
+
+
 def test_stop_file_exits_resumably(tmp_path, monkeypatch):
     from nextyolo.engine.trainer import STOPPED_EXIT_CODE
 

@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 
 from ..data.dataset import YOLODataset, collate
 from ..loss.distill import DistillConfig, distill_loss
@@ -86,6 +86,7 @@ class TrainConfig:
     init_head: str = "subset"      # "subset": slice cls heads to our classes by name; "random": re-init cls heads
     compile: bool = False          # torch.compile the training forward (+~25% CPU throughput)
     resume: bool = True            # continue from <out>/last.pt if it holds a full training state
+    save_interval_min: float = 0.0  # also checkpoint mid-epoch every N minutes (preemptible VMs); 0 = epoch ends only
     channels_last: bool = True
     device: str = "auto"           # "auto" = cuda if available, else cpu
     amp: str = "auto"              # "auto": bf16 on GPUs that support it, else fp16 + grad scaling; "off" on CPU
@@ -165,6 +166,24 @@ def _build_optimizer(model: nn.Module, name: str, lr: float, momentum: float, de
     raise ValueError(name)
 
 
+class EpochSampler(Sampler):
+    """Shuffled order that is a pure function of (seed, epoch), so a run resumed mid-epoch replays exactly the
+    batches it has not trained on yet (`start` = number of samples to skip)."""
+
+    def __init__(self, n: int, seed: int = 0):
+        self.n, self.seed, self.epoch, self.start = n, seed, 0, 0
+
+    def set_epoch(self, epoch: int, start: int = 0) -> None:
+        self.epoch, self.start = epoch, start
+
+    def __iter__(self):
+        g = torch.Generator().manual_seed(self.seed * 100003 + self.epoch)
+        return iter(torch.randperm(self.n, generator=g)[self.start:].tolist())
+
+    def __len__(self) -> int:
+        return self.n - self.start
+
+
 def seed_all(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -208,6 +227,7 @@ class Trainer:
                         if cfg.val else None)
         self.log(f"datasets cached in {time.time() - t0:.0f}s: train {len(self.train_set)} "
                  f"val {len(self.val_set) if self.val_set else 0}")
+        self.sampler = EpochSampler(len(self.train_set), cfg.seed)
         self.loader = self._loader()
         self.accumulate = max(round(cfg.nbs / cfg.batch), 1)
         wd = cfg.weight_decay * cfg.batch * self.accumulate / cfg.nbs
@@ -232,8 +252,8 @@ class Trainer:
         return model.train()
 
     def _loader(self):
-        return DataLoader(self.train_set, batch_size=self.cfg.batch, shuffle=True, num_workers=self.cfg.workers,
-                          collate_fn=collate, drop_last=True, persistent_workers=self.cfg.workers > 0,
+        return DataLoader(self.train_set, batch_size=self.cfg.batch, sampler=self.sampler,
+                          num_workers=self.cfg.workers, collate_fn=collate, drop_last=True, persistent_workers=self.cfg.workers > 0,
                           worker_init_fn=_worker_init, pin_memory=self.device.type == "cuda")
 
     def log(self, msg: str) -> None:
@@ -258,16 +278,28 @@ class Trainer:
         self.ema.ema.load_state_dict(ck["ema"])
         self.ema.updates = ck["ema_updates"]
         self.opt.load_state_dict(ck["optimizer"])
+        if "scaler" in ck:
+            self.scaler.load_state_dict(ck["scaler"])
         self.history = ck["history"]
+        if ck.get("iter", 0):  # mid-epoch checkpoint: continue inside that epoch
+            self._mid = ck
+            self.log(f"resumed from {path} in epoch {ck['epoch'] + 1} at iteration {ck['iter']}")
+            return ck["epoch"], ck["best"], ck["best_metrics"], ck["last_step"], ck["hours"]
         self.log(f"resumed from {path} after epoch {ck['epoch'] + 1}")
         return ck["epoch"] + 1, ck["best"], ck["best_metrics"], ck["last_step"], ck["hours"]
+
+    def _full_state(self, best: float, best_metrics: dict, last_step: int, t_start: float, **extra) -> dict:
+        return dict(model=self.model.state_dict(), optimizer=self.opt.state_dict(), scaler=self.scaler.state_dict(),
+                    ema_updates=self.ema.updates, history=self.history, best=best, best_metrics=best_metrics,
+                    last_step=last_step, hours=(time.time() - t_start) / 3600, **extra)
 
     def train(self) -> dict:
         cfg = self.cfg
         if cfg.resume and (self.out / "summary.json").exists():
             self.log("run already complete; nothing to do")
             return json.loads((self.out / "summary.json").read_text())
-        nb = len(self.loader)
+        nb = len(self.train_set) // cfg.batch  # full epoch (drop_last), also when resuming mid-epoch
+        self._mid = None
         nw = round(min(cfg.warmup_epochs, max(cfg.epochs - 1, 0)) * nb) if cfg.warmup_epochs > 0 else 0
         start_epoch, best, best_metrics, last_step, prev_hours = self._try_resume()
         t_start = time.time() - prev_hours * 3600
@@ -278,10 +310,15 @@ class Trainer:
                 self.loader = self._loader()  # restart workers so they see the new hyp
                 self.log("closing mosaic")
             self.model.train()
-            t_ep = time.time()
-            run = torch.zeros(6)
+            mid, self._mid = self._mid, None
+            i0 = mid["iter"] if mid else 0
+            t_ep = time.time() - (mid["epoch_time"] if mid else 0.0)
+            t_seg, t_save = time.time(), time.time()
+            run = mid["run"] if mid else torch.zeros(6)
+            kd_run = mid.get("kd_run") if mid else None
+            self.sampler.set_epoch(epoch, i0 * cfg.batch)
             self.opt.zero_grad(set_to_none=True)
-            for i, (imgs, targets, _) in enumerate(self.loader):
+            for i, (imgs, targets, _) in enumerate(self.loader, start=i0):
                 ni = i + nb * epoch
                 if ni <= nw:
                     xi = [0, nw]
@@ -303,7 +340,7 @@ class Trainer:
                     l_kd, kd_items = distill_loss(preds, t_preds, self.dcfg)
                     loss = loss + l_kd
                     kd_items = kd_items.cpu()
-                    kd_run = kd_items if i == 0 else kd_run * (i / (i + 1)) + kd_items / (i + 1)
+                    kd_run = kd_items if kd_run is None else kd_run * (i / (i + 1)) + kd_items / (i + 1)
                 self.scaler.scale(loss).backward()
                 if ni - last_step >= self.accumulate:
                     self.scaler.unscale_(self.opt)
@@ -315,8 +352,16 @@ class Trainer:
                     last_step = ni
                 vec = torch.cat([items["o2m"], items.get("o2o", torch.zeros(3, device=items["o2m"].device))]).cpu()
                 run = run * (i / (i + 1)) + vec / (i + 1)
+                if (cfg.save_interval_min and last_step == ni and i + 1 < nb
+                        and time.time() - t_save > cfg.save_interval_min * 60):
+                    # right after an optimizer step, so no accumulated gradients are lost
+                    self.save("last.pt", epoch, full=self._full_state(
+                        best, best_metrics, last_step, t_start, iter=i + 1, run=run, kd_run=kd_run,
+                        epoch_time=time.time() - t_ep))
+                    self.log(f"checkpoint at epoch {epoch + 1} iteration {i + 1}/{nb}")
+                    t_save = time.time()
                 if i % self.cfg.log_interval == 0:
-                    ips = (i + 1) * cfg.batch / (time.time() - t_ep)
+                    ips = (i + 1 - i0) * cfg.batch / (time.time() - t_seg)
                     self.log(f"ep {epoch + 1}/{cfg.epochs} it {i}/{nb} o2m[box {run[0]:.3f} cls {run[1]:.3f} "
                              f"l1 {run[2]:.3f}] o2o[box {run[3]:.3f} cls {run[4]:.3f} l1 {run[5]:.3f}] "
                              f"{ips:.1f} img/s" + (f" kd[cls {kd_run[0]:.3f} box {kd_run[1]:.3f}]"
@@ -338,10 +383,7 @@ class Trainer:
                     self.save("best.pt", epoch)
             self.history.append(rec)
             self.log(f"epoch {epoch + 1} done in {rec['time_s']:.0f}s")
-            self.save("last.pt", epoch, full=dict(
-                model=self.model.state_dict(), optimizer=self.opt.state_dict(), ema_updates=self.ema.updates,
-                history=self.history, best=best, best_metrics=best_metrics, last_step=last_step,
-                hours=(time.time() - t_start) / 3600))
+            self.save("last.pt", epoch, full=self._full_state(best, best_metrics, last_step, t_start))
             (self.out / "history.json").write_text(json.dumps(self.history, indent=1))
             if epoch + 1 < cfg.epochs and should_pause(time.time() - t_ep):
                 self.log("pausing after the epoch checkpoint (stop file or deadline; run is resumable)")
