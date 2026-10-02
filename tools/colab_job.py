@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -55,13 +56,26 @@ def sh(cmd: list[str] | str, **kw) -> None:
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 
-def fetch(url: str, dst: Path) -> None:
+def fetch(url: str, dst: Path, attempts: int = 6) -> None:
+    """Download with retries; an interrupted transfer resumes from the partial file (HTTP Range)."""
     if dst.exists():
         return
     print(f"downloading {url}", flush=True)
     tmp = dst.with_suffix(dst.suffix + ".part")
-    urllib.request.urlretrieve(url, tmp)
-    tmp.rename(dst)
+    for k in range(attempts):
+        have = tmp.stat().st_size if tmp.exists() else 0
+        req = urllib.request.Request(url, headers={"Range": f"bytes={have}-"} if have else {})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "ab" if r.status == 206 else "wb") as f:
+                shutil.copyfileobj(r, f, 1 << 20)
+            tmp.rename(dst)
+            return
+        except OSError as e:  # URLError, connection reset, timeout
+            if k == attempts - 1:
+                raise
+            print(f"  {type(e).__name__}: {e}; retrying ({tmp.stat().st_size if tmp.exists() else 0} bytes so far)",
+                  flush=True)
+            time.sleep(2 ** (k + 1))
 
 
 def get_repo(work: Path, ref: str, repo_dir: str | None) -> Path:
@@ -81,9 +95,13 @@ def get_voc(work: Path, repo: Path, data_dir: str | None) -> Path:
         raw = work / "datasets" / "raw"
         raw.mkdir(parents=True, exist_ok=True)
         for z in VOC_ZIPS:
+            done = raw / f"{z}.done"  # extracted already (the zip itself is deleted to save disk)
+            if done.exists():
+                continue
             fetch(f"{ASSETS}/v0.0.0/{z}.zip", raw / f"{z}.zip")
             sh(["unzip", "-q", "-o", str(raw / f"{z}.zip"), "-d", str(raw)])
             (raw / f"{z}.zip").unlink()
+            done.touch()
         sh([sys.executable, str(repo / "tools" / "prepare_voc.py"), "--src", str(raw / "VOCdevkit"), "--dst", str(voc)])
     spec = {"root": str(voc), "train": ["images/train2007", "images/val2007", "images/train2012", "images/val2012"],
             "val": ["images/test2007"], "names": VOC_NAMES}
