@@ -230,6 +230,7 @@ With lr 1e-4 (YOLO26n → VOC, 320 px, CPU):
 |---|---|---|
 | 3 epochs | 56.54 / 58.14 / 58.96 | 59.42 |
 | 6 epochs | 56.54 / 57.95 / 58.65 / 59.01 / 59.37 / 60.03 | 60.70 |
+| 12 epochs (eval every 2) | ep 2/4/6/8/10/12: 57.81 / 58.40 / 59.19 / 60.01 / 60.02 / 59.55 | 60.28 |
 | 6 epochs, lr 2e-4 (control) | 55.85 / 56.91 / 57.73 / 58.02 / 58.95 / 59.38 | 60.18 |
 | 3 epochs + distillation from the VOC-tuned s (o2m only) | 57.34 / 59.03 / 59.19 | 59.94 |
 | **6 epochs + distillation from the VOC-tuned s (o2m only)** | 57.34 / 58.78 / 58.91 / 59.56 / 59.58 / **60.43** | **61.01** (AP50 81.0) |
@@ -243,6 +244,10 @@ short-schedule effect. Distillation still adds +0.40 AP e2e / +0.31 AP o2m+NMS a
 early (+0.8 AP at epochs 1–2) and settles at about +0.4 AP. It costs about 1.7× the training time on CPU for the
 teacher forward. Best n/320 fine-tuning recipe: **lr 1e-4, mosaic + close_mosaic, longer schedule, o2m-only KD from a
 target-tuned teacher**. Result: 60.43 AP NMS-free (+3.9 over zero-shot, +3.5 over the original recipe).
+
+Doubling the schedule to 12 epochs does not help at n/320: AP plateaus at 60.0 by epoch 8–10 and ends at 59.55
+(60.28 with NMS), slightly below the 6-epoch run. The nano model's capacity at 320 px, not the schedule, is the limit
+here. The extra training mostly overfits once mosaic is switched off (−0.5 over the last two epochs).
 
 ### Fine-tuning the largest model: YOLO26x → VOC (640 px, lr 1e-4, 3 epochs, Colab T4)
 
