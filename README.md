@@ -114,12 +114,15 @@ budgets, not COCO-scale state of the art. Full details, including what each numb
 
 | model | 320 px | 640 px | how |
 |---|---|---|---|
+| YOLO26x COCO weights, class-subset heads (largest model, no VOC training yet) | — | 72.27 / 87.58 (72.96 / 88.25 with NMS) | zero-shot; l: 71.27, m: 70.44 |
 | **nextYOLO-s fine-tuned from YOLO26s (10 epochs, Colab T4)** | — | **69.72 / 87.63** (70.79 / 88.70 with NMS) | class-subset head init |
 | **nextYOLO-n fine-tuned + distilled from the fine-tuned s (o2m only)** | — | **66.70 / 85.44** (67.54 / 86.48 with NMS) | class-subset init + KD |
 | nextYOLO-n fine-tuned from YOLO26n (10 epochs, Colab T4) | — | 65.97 / 85.02 (66.75 / 85.93 with NMS) | class-subset head init |
 | YOLO26s COCO weights, class-subset heads | 65.45 / 83.52 | 68.16 / 85.55 | zero-shot, no VOC training |
 | YOLO26n COCO weights, class-subset heads | 56.54 / 75.78 | 62.61 / 81.36 | zero-shot, no VOC training |
-| nextYOLO-n fine-tuned from YOLO26n (3 epochs) | 56.96 / 76.95 (58.08 / 78.41 with NMS) | — | class-subset head init |
+| **nextYOLO-n, best CPU recipe (6 epochs, lr 1e-4, o2m-only KD from the fine-tuned s)** | **60.43 / 80.34** (61.01 / 81.00 with NMS) | — | class-subset init + lr 1e-4 + KD |
+| nextYOLO-n fine-tuned from YOLO26n (6 epochs, lr 1e-4) | 60.03 / 79.55 (60.70 / 80.48 with NMS) | — | class-subset head init |
+| nextYOLO-n fine-tuned from YOLO26n (3 epochs, original lr 4.17e-4) | 56.96 / 76.95 (58.08 / 78.41 with NMS) | — | class-subset head init |
 | Ultralytics fine-tune of YOLO26n (3 epochs) | 47.67 / 65.79 (54.55 / 75.28 with NMS) | — | standard trainer, cls heads re-initialised |
 
 **What the experiments established** (noise level between seeds: ~0.2 AP):
@@ -129,7 +132,8 @@ budgets, not COCO-scale state of the art. Full details, including what each numb
 | Parity with YOLO26 requires its 3× cls-head lr under MuSGD (easy to miss) | +0.84 AP NMS-free |
 | **Class-subset head transfer** from COCO weights vs re-initialised heads | **+7.7 AP** NMS-free, +2.7 AP with NMS |
 | The **one-to-one head must stay self-consistent**: an external ranking for its assignment (AOA from o2m, or from a teacher) or a distilled o2o score map | −2.5 to −6.5 AP NMS-free |
-| Distil only the dense o2m branch (o2o left alone) | neutral (−0.2) with a zero-shot COCO teacher; **+0.7 AP** with a VOC-fine-tuned teacher (640 px, GPU) |
+| **Fine-tuning lr 1e-4** instead of the auto-picked 4.17e-4 (which wipes out 6–14 AP of pretrained accuracy in epoch 1) | **+2.0 AP** (3 ep), and 1e-4 beats 3e-5 and 2e-4 |
+| Distil only the dense o2m branch (o2o left alone) | neutral (−0.2) with a zero-shot COCO teacher; **+0.7 AP** with a VOC-fine-tuned teacher (640 px, GPU), +0.4 AP on top of lr 1e-4 (320 px, 6 ep) |
 | DEIM's MAL loss on a dense o2o head (it down-weights the near-duplicate negatives an NMS-free head must suppress) | −4.1 AP NMS-free |
 | YOLO27-style dual-scale head without compensation | −1.1 AP, −15% latency |
 | NMS-free inference cost, nextYOLO-n @640, 4-thread CPU, ONNX Runtime | 23.9 ms, no post-processing |

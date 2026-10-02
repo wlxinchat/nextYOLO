@@ -1,6 +1,6 @@
 # All runs (VOC07 test, AP in %, scored by nextYOLO's pycocotools-equivalent evaluator)
 
-Legend: `p1_ny_y26recipe` = recipe v1 (its config predates the `cls_lr_mult` flag, i.e. no 3x cls-head lr); `p1b_ny_y26parity` and all later MuSGD runs = recipe v2 (`cls_lr_mult=3.0`). Fine-tuning runs (`b*`, `c*`) use 320 px / 3 epochs / AdamW from `yolo26n.pt`; from-scratch runs use 256 px / 12 epochs / MuSGD. "first eval" is epoch 6 for from-scratch runs and epoch 1 for fine-tuning runs. The AOA run (`p2_ny_aoa_halfschedule`) was stopped after its epoch-6 evaluation; see its history.json.
+Legend: `p1_ny_y26recipe` = recipe v1 (its config predates the `cls_lr_mult` flag, i.e. no 3x cls-head lr); `p1b_ny_y26parity` and all later MuSGD runs = recipe v2 (`cls_lr_mult=3.0`). Fine-tuning runs (`b*`, `c*`) use 320 px / 3 epochs (unless noted) / AdamW from `yolo26n.pt`, lr0 4.17e-4 unless noted; from-scratch runs use 256 px / 12 epochs / MuSGD. "first eval" is epoch 6 for from-scratch runs and epoch 1 for fine-tuning runs. The AOA run (`p2_ny_aoa_halfschedule`) was stopped after its epoch-6 evaluation; see its history.json.
 
 | run | impl | change vs. YOLO26 recipe | AP e2e (o2o, NMS-free) | AP50 e2e | AP_S e2e | AP o2m+NMS | AP50 o2m+NMS | AP e2e @ first eval | hours |
 |---|---|---|---|---|---|---|---|---|---|
@@ -16,3 +16,9 @@ Legend: `p1_ny_y26recipe` = recipe v1 (its config predates the `cls_lr_mult` fla
 | c1_ft_kd | nextYOLO | optimizer=adamw, init=yolo26n.pt, distill.teacher=yolo26s.pt | 52.44 | 71.95 | 13.14 | 57.06 | 77.66 | 44.20 | 1.7 |
 | c2_ft_kd_tassign | nextYOLO | loss.o2o_assign=teacher, optimizer=adamw, init=yolo26n.pt, distill.teacher=yolo26s.pt | 50.49 | 68.32 | 14.05 | 57.03 | 77.69 | 42.19 | 1.8 |
 | c3_ft_kd_o2m_only | nextYOLO | optimizer=adamw, init=yolo26n.pt, distill.teacher=yolo26s.pt, distill.branches=['o2m'] | 56.78 | 77.32 | 15.37 | 57.24 | 77.90 | 51.36 | 1.5 |
+| b5_ft_lr1e4 | nextYOLO | optimizer=adamw, init=yolo26n.pt, lr0=1e-4 | 58.96 | 78.48 | 11.78 | 59.42 | 79.37 | 56.54 | 0.9 |
+| b6_ft_lr3e5 | nextYOLO | optimizer=adamw, init=yolo26n.pt, lr0=3e-5 | 57.92 | 77.29 | 11.68 | 58.30 | 77.97 | 56.51 | 0.9 |
+| b7_ft_lr1e4_6ep | nextYOLO | optimizer=adamw, init=yolo26n.pt, lr0=1e-4, 6 epochs | 60.03 | 79.55 | 12.38 | 60.70 | 80.48 | 56.54 | 1.8 |
+| b8_ft_lr2e4_6ep | nextYOLO | optimizer=adamw, init=yolo26n.pt, lr0=2e-4, 6 epochs | 59.38 | 79.21 | 12.78 | 60.18 | 80.25 | 55.85 | 1.8 |
+| c4_ft_lr1e4_kd | nextYOLO | optimizer=adamw, init=yolo26n.pt, distill.teacher=ft_s640_voc.pt, distill.branches=['o2m'], lr0=1e-4 | 59.19 | 79.17 | 12.93 | 59.94 | 80.12 | 57.34 | 1.6 |
+| c5_ft_lr1e4_6ep_kd | nextYOLO | optimizer=adamw, init=yolo26n.pt, distill.teacher=ft_s640_voc.pt, distill.branches=['o2m'], lr0=1e-4, 6 epochs | 60.43 | 80.34 | 13.28 | 61.01 | 81.00 | 57.34 | 3.1 |

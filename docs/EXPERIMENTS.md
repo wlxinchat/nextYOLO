@@ -229,12 +229,20 @@ With lr 1e-4 (YOLO26n → VOC, 320 px, CPU):
 | run | AP e2e by epoch | final AP o2m+NMS |
 |---|---|---|
 | 3 epochs | 56.54 / 58.14 / 58.96 | 59.42 |
-| **6 epochs** | 56.54 / 57.95 / 58.65 / 59.01 / 59.37 / **60.03** | **60.70** |
+| 6 epochs | 56.54 / 57.95 / 58.65 / 59.01 / 59.37 / 60.03 | 60.70 |
+| 6 epochs, lr 2e-4 (control) | 55.85 / 56.91 / 57.73 / 58.02 / 58.95 / 59.38 | 60.18 |
 | 3 epochs + distillation from the VOC-tuned s (o2m only) | 57.34 / 59.03 / 59.19 | 59.94 |
+| **6 epochs + distillation from the VOC-tuned s (o2m only)** | 57.34 / 58.78 / 58.91 / 59.56 / 59.58 / **60.43** | **61.01** (AP50 81.0) |
 
 Longer training still pays at the new lr: +1.1 AP from 3 to 6 epochs, and the curve is still rising. Distillation
 adds on top of the lr gain (+0.23 AP e2e, +0.52 AP o2m+NMS; +0.8–0.9 AP at epochs 1–2). The gain is smaller than at
 640 px on the GPU (+0.73), probably because this teacher was trained at 640 px and is weaker at 320.
+
+At 6 epochs lr 2e-4 is behind 1e-4 at every epoch (−0.65 AP final), so 1e-4 is the best lr we found, not just a
+short-schedule effect. Distillation still adds +0.40 AP e2e / +0.31 AP o2m+NMS at 6 epochs. Its lead is largest
+early (+0.8 AP at epochs 1–2) and settles at about +0.4 AP. It costs about 1.7× the training time on CPU for the
+teacher forward. Best n/320 fine-tuning recipe: **lr 1e-4, mosaic + close_mosaic, longer schedule, o2m-only KD from a
+target-tuned teacher**. Result: 60.43 AP NMS-free (+3.9 over zero-shot, +3.5 over the original recipe).
 
 ## Reproducing
 
