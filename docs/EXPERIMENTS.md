@@ -231,6 +231,7 @@ With lr 1e-4 (YOLO26n → VOC, 320 px, CPU):
 | 3 epochs | 56.54 / 58.14 / 58.96 | 59.42 |
 | 6 epochs | 56.54 / 57.95 / 58.65 / 59.01 / 59.37 / 60.03 | 60.70 |
 | 12 epochs (eval every 2) | ep 2/4/6/8/10/12: 57.81 / 58.40 / 59.19 / 60.01 / 60.02 / 59.55 | 60.28 |
+| 12 epochs + distillation (o2m only) | ep 2/4/6/8/10/12: 58.43 / 59.22 / 59.82 / 60.07 / 60.08 / 59.87 | 60.83 |
 | 6 epochs, lr 2e-4 (control) | 55.85 / 56.91 / 57.73 / 58.02 / 58.95 / 59.38 | 60.18 |
 | 3 epochs + distillation from the VOC-tuned s (o2m only) | 57.34 / 59.03 / 59.19 | 59.94 |
 | **6 epochs + distillation from the VOC-tuned s (o2m only)** | 57.34 / 58.78 / 58.91 / 59.56 / 59.58 / **60.43** | **61.01** (AP50 81.0) |
@@ -248,6 +249,9 @@ target-tuned teacher**. Result: 60.43 AP NMS-free (+3.9 over zero-shot, +3.5 ove
 Doubling the schedule to 12 epochs does not help at n/320: AP plateaus at 60.0 by epoch 8–10 and ends at 59.55
 (60.28 with NMS), slightly below the 6-epoch run. The nano model's capacity at 320 px, not the schedule, is the limit
 here. The extra training mostly overfits once mosaic is switched off (−0.5 over the last two epochs).
+With distillation the 12-epoch run ends at 59.87 (60.83 with NMS). That is +0.32 / +0.55 over 12 epochs without
+it, so KD keeps a small edge, but it is still below the 6-epoch KD run (60.43 / 61.01). For n at 320 px, 6 epochs at
+lr 1e-4 with o2m-only KD is the best recipe found.
 
 ### Fine-tuning the largest model: YOLO26x → VOC (640 px, lr 1e-4, 3 epochs, Colab T4)
 

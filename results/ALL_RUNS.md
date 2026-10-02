@@ -23,3 +23,4 @@ Legend: `p1_ny_y26recipe` = recipe v1 (its config predates the `cls_lr_mult` fla
 | c4_ft_lr1e4_kd | nextYOLO | optimizer=adamw, init=yolo26n.pt, distill.teacher=ft_s640_voc.pt, distill.branches=['o2m'], lr0=1e-4 | 59.19 | 79.17 | 12.93 | 59.94 | 80.12 | 57.34 | 1.6 |
 | c5_ft_lr1e4_6ep_kd | nextYOLO | optimizer=adamw, init=yolo26n.pt, distill.teacher=ft_s640_voc.pt, distill.branches=['o2m'], lr0=1e-4, 6 epochs | 60.43 | 80.34 | 13.28 | 61.01 | 81.00 | 57.34 | 3.1 |
 | b9_ft_lr1e4_12ep | nextYOLO | optimizer=adamw, init=yolo26n.pt, lr0=1e-4, 12 epochs | 59.55 | 79.31 | 11.85 | 60.28 | 80.31 | 57.81 | 4.2 |
+| c6_ft_lr1e4_12ep_kd | nextYOLO | optimizer=adamw, init=yolo26n.pt, distill.teacher=ft_s640_voc.pt, distill.branches=['o2m'], lr0=1e-4, 12 epochs | 59.87 | 79.81 | 13.32 | 60.83 | 81.13 | 58.43 | 7.3 |
