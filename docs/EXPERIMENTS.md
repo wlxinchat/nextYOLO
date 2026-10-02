@@ -244,6 +244,27 @@ early (+0.8 AP at epochs 1–2) and settles at about +0.4 AP. It costs about 1.7
 teacher forward. Best n/320 fine-tuning recipe: **lr 1e-4, mosaic + close_mosaic, longer schedule, o2m-only KD from a
 target-tuned teacher**. Result: 60.43 AP NMS-free (+3.9 over zero-shot, +3.5 over the original recipe).
 
+### Fine-tuning the largest model: YOLO26x → VOC (640 px, lr 1e-4, 3 epochs, Colab T4)
+
+The recipe found above, applied to YOLO26x (58.9M params, 194 GFLOPs): AdamW lr 1e-4, batch 8 (nominal 64),
+mosaic with the last epoch mosaic-free, class-subset head init. One run, 1.37 GPU hours.
+
+| epoch | AP e2e | AP50 | AP75 | AP_S | AP_M | AP_L |
+|---|---|---|---|---|---|---|
+| 0 (zero-shot) | 72.27 | 87.58 | 79.95 | 31.31 | 56.59 | 80.82 |
+| 1 (mosaic) | 70.29 | 87.27 | 78.58 | 35.34 | 57.86 | 75.99 |
+| 2 (mosaic) | 73.84 | 90.32 | 82.42 | 36.23 | 61.23 | 79.63 |
+| **3 (no mosaic)** | **76.10** | **91.67** | **84.81** | **38.22** | **63.38** | **82.08** |
+| 3, o2m + NMS | 77.19 | 92.66 | 85.38 | 37.95 | 64.08 | 82.70 |
+
+**+3.8 AP NMS-free over the zero-shot start, and 6.4 AP above the best fine-tuned s.** This is the best model in this
+study. The epoch-1 dip (−2.0) is the mosaic distribution shift, not an lr shock: AP_S already rises at epoch 1, and
+the mosaic-free last epoch adds +2.3. The curve is still steep at the end, so a longer schedule should pay further.
+
+The first attempt was lost when the free VM was reclaimed 19 minutes into a 21-minute epoch. Since then the trainer
+writes a mid-epoch checkpoint every `save_interval_min` minutes. The run above saved one every 8 minutes and the
+session synced each to the local machine (0.94 GB, ~80 s), so a reclaim costs at most ~8 minutes of training.
+
 ## Reproducing
 
 ```bash

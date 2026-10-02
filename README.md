@@ -105,7 +105,7 @@ Training parameter counts are identical to Ultralytics' model summaries for `yol
 
 ## Results
 
-Everything was trained on a 4-core CPU with no GPU, so the experiments use reduced budgets: Pascal VOC 07+12 →
+Experiments ran on a 4-core CPU and on free Google Colab T4 GPUs, so they use reduced budgets: Pascal VOC 07+12 →
 VOC07 test, all models scored by the same pycocotools-equivalent evaluator. They show which levers help under those
 budgets, not COCO-scale state of the art. Full details, including what each number does and does not show, are in
 [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md).
@@ -114,8 +114,9 @@ budgets, not COCO-scale state of the art. Full details, including what each numb
 
 | model | 320 px | 640 px | how |
 |---|---|---|---|
-| YOLO26x COCO weights, class-subset heads (largest model, no VOC training yet) | — | 72.27 / 87.58 (72.96 / 88.25 with NMS) | zero-shot; l: 71.27, m: 70.44 |
-| **nextYOLO-s fine-tuned from YOLO26s (10 epochs, Colab T4)** | — | **69.72 / 87.63** (70.79 / 88.70 with NMS) | class-subset head init |
+| **nextYOLO-x fine-tuned from YOLO26x (3 epochs, lr 1e-4, Colab T4)** | — | **76.10 / 91.67** (77.19 / 92.66 with NMS) | class-subset init + lr 1e-4 |
+| YOLO26x COCO weights, class-subset heads | — | 72.27 / 87.58 (72.96 / 88.25 with NMS) | zero-shot; l: 71.27, m: 70.44 |
+| nextYOLO-s fine-tuned from YOLO26s (10 epochs, lr 4.17e-4, Colab T4) | — | **69.72 / 87.63** (70.79 / 88.70 with NMS) | class-subset head init |
 | **nextYOLO-n fine-tuned + distilled from the fine-tuned s (o2m only)** | — | **66.70 / 85.44** (67.54 / 86.48 with NMS) | class-subset init + KD |
 | nextYOLO-n fine-tuned from YOLO26n (10 epochs, Colab T4) | — | 65.97 / 85.02 (66.75 / 85.93 with NMS) | class-subset head init |
 | YOLO26s COCO weights, class-subset heads | 65.45 / 83.52 | 68.16 / 85.55 | zero-shot, no VOC training |
@@ -140,7 +141,9 @@ budgets, not COCO-scale state of the art. Full details, including what each numb
 
 **Recommendation.** For the best accuracy on a new task, take the largest real-time model your latency budget allows,
 initialise it from detection-pretrained weights with class-subset heads where the label spaces overlap, and fine-tune
-on a GPU with a long schedule. For the best NMS-free nano model, use the YOLO26 recipe as implemented here; spend
+with AdamW at lr 1e-4 (not the auto-picked 4.17e-4), mosaic on and switched off for the last epoch(s). YOLO26x tuned this
+way gains +3.8 AP in 3 epochs on a free T4. To deploy a small model, distil its dense o2m branch from such a
+fine-tuned large model. For the best NMS-free nano model, use the YOLO26 recipe as implemented here; spend
 extra effort on data and pretraining, not on re-wiring the one-to-one assignment. Beyond the nano scale, the field's
 frontier is query-based decoders on foundation-model backbones (RF-DETR, DEIMv2, YOLO27 m/l; see
 [`docs/RESEARCH.md`](docs/RESEARCH.md)).
