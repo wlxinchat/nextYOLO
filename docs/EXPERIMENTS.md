@@ -157,14 +157,15 @@ because pixel-unshuffle at high resolution is memory-bound. It was not trained, 
 | scale | ONNX ms | zero-shot (COCO weights, class-subset heads) | best fine-tuned |
 |---|---|---|---|
 | n | 23.9 | 62.61 | 66.70 (lr 4.17e-4, 10 ep, KD from fine-tuned s) |
-| s | 57.6 | 68.16 | 69.72 (lr 4.17e-4, 10 ep) |
+| s | 57.6 | 68.16 | **72.82** (lr 1e-4, 6 ep) |
 | m | 205.6 | 70.44 | — |
 | l | 243.9 | 71.27 | — |
 | x | 509.7 | 72.27 | **76.10** (lr 1e-4, 3 ep) |
 
 Each scale step costs 2–3.5× latency for +1–5.5 AP. On a CPU, only n and s are real-time at 640 px. The fine-tuned x
-(76.1 AP, ~0.5 s/image on 4 CPU threads) is the accuracy ceiling to distil into them. The n and s numbers above still
-use the older lr 4.17e-4 recipe, so their fine-tuned values are conservative.
+(76.1 AP, ~0.5 s/image on 4 CPU threads) is the accuracy ceiling to distil into them. The n number above still
+uses the older lr 4.17e-4 recipe, so it is conservative. With lr 1e-4, fine-tuned s (57.6 ms) beats zero-shot x
+(509.7 ms).
 
 ## E. GPU runs (Google Colab, free Tesla T4)
 
@@ -230,7 +231,8 @@ an optimisation shock from the learning rate, not an augmentation effect.
 | run | lr | AP e2e by epoch | final AP o2m+NMS |
 |---|---|---|---|
 | YOLO26s → VOC, 640 px (GPU) | 4.17e-4 | 54.04 (ep 2) … 69.72 (ep 10) | 70.79 |
-| YOLO26s → VOC, 640 px (GPU) | **1e-4** | **69.35 (ep 2)**, then the VM was reclaimed | — |
+| YOLO26s → VOC, 640 px (GPU) | 1e-4 | 69.35 (ep 2), then the VM was reclaimed | — |
+| YOLO26s → VOC, 640 px (GPU), 6 ep, last epoch mosaic-free | **1e-4** | **69.43 / 70.02 / 70.88 / 71.73 / 72.90 / 72.82** | **73.49** |
 | YOLO26n → VOC, 320 px, 3 ep (CPU) | 4.17e-4 | 50.47 / 53.70 / 56.96 | 58.08 |
 | YOLO26n → VOC, 320 px, 3 ep (CPU) | **1e-4** | **56.54 / 58.14 / 58.96** | **59.42** |
 | YOLO26n → VOC, 320 px, 3 ep (CPU) | 3e-5 | 56.51 / 57.61 / 57.92 | 58.30 |
@@ -269,6 +271,10 @@ here. The extra training mostly overfits once mosaic is switched off (−0.5 ove
 With distillation the 12-epoch run ends at 59.87 (60.83 with NMS). That is +0.32 / +0.55 over 12 epochs without
 it, so KD keeps a small edge, but it is still below the 6-epoch KD run (60.43 / 61.01). For n at 320 px, 6 epochs at
 lr 1e-4 with o2m-only KD is the best recipe found.
+
+The full 6-epoch s run at lr 1e-4 (0.74 GPU hours) ends at **72.82 AP NMS-free / 73.49 with NMS**. That is +3.1 AP over
+the 10-epoch lr-4.17e-4 recipe in 40% fewer epochs, and above zero-shot YOLO26x (72.27) at 1/9 of its FLOPs.
+Epoch 1 alone (69.43) is nearly level with the old 10-epoch result.
 
 ### Fine-tuning the largest model: YOLO26x → VOC (640 px, lr 1e-4, 3 epochs, Colab T4)
 

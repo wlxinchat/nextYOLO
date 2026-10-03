@@ -116,6 +116,7 @@ budgets, not COCO-scale state of the art. Full details, including what each numb
 |---|---|---|---|
 | **nextYOLO-x fine-tuned from YOLO26x (3 epochs, lr 1e-4, Colab T4)** | — | **76.10 / 91.67** (77.19 / 92.66 with NMS) | class-subset init + lr 1e-4 |
 | YOLO26x COCO weights, class-subset heads | — | 72.27 / 87.58 (72.96 / 88.25 with NMS) | zero-shot; l: 71.27, m: 70.44 |
+| **nextYOLO-s fine-tuned from YOLO26s (6 epochs, lr 1e-4, Colab T4)** | — | **72.82 / 89.78** (73.49 / 90.51 with NMS) | class-subset init + lr 1e-4 |
 | nextYOLO-s fine-tuned from YOLO26s (10 epochs, lr 4.17e-4, Colab T4) | — | **69.72 / 87.63** (70.79 / 88.70 with NMS) | class-subset head init |
 | **nextYOLO-n fine-tuned + distilled from the fine-tuned s (o2m only)** | — | **66.70 / 85.44** (67.54 / 86.48 with NMS) | class-subset init + KD |
 | nextYOLO-n fine-tuned from YOLO26n (10 epochs, Colab T4) | — | 65.97 / 85.02 (66.75 / 85.93 with NMS) | class-subset head init |
