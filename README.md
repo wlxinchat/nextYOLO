@@ -56,6 +56,10 @@ preset (`smoke`, `voc_scratch`, `voc_ft`), and archives the results. It can be l
   `uv tool install google-colab-cli`, then `colab run --gpu A100 tools/colab_job.py --preset voc_scratch`. The CLI
   signs in with a copy-paste OAuth flow that works on headless machines. Network-restricted sandboxes must allow
   `colab.research.google.com` and `*.colab.dev`.
+* **Free-tier VMs that get reclaimed:** [`tools/colab/pipeline.sh`](tools/colab/pipeline.sh) `JOBS_FILE` runs a
+  queue of `colab_job.py` jobs to completion. It retries for a T4, uploads teachers and the last checkpoint, and syncs
+  logs and checkpoints every 3 minutes. On VM loss it resumes on a new VM. Pair it with `save_interval_min=8` so a
+  reclaim loses at most a few minutes of training. Example queue: [`tools/colab/jobs_example.txt`](tools/colab/jobs_example.txt).
 
 Dataset format: `images/<split>/*.jpg` with `labels/<split>/*.txt` (`cls cx cy w h`, normalised), described by a JSON
 file such as [`data/voc.json`](data/voc.json).

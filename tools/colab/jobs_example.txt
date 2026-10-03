@@ -1,0 +1,5 @@
+ft_s640_lr1e4_6ep|--preset voc_ft --init yolo26s --epochs 6 --batch 32 --set compile=false eval_interval=1 close_mosaic=1 warmup_epochs=0.5 lr0=0.0001 save_interval_min=8
+ft_s640_lr1e4_6ep_kdx|--preset voc_ft --init yolo26s --epochs 6 --batch 32 --set compile=false eval_interval=1 close_mosaic=1 warmup_epochs=0.5 lr0=0.0001 save_interval_min=8 distill.teacher=/content/ft_x640_voc.pt 'distill.branches=["o2m"]'
+ft_n640_lr1e4_6ep|--preset voc_ft --init yolo26n --epochs 6 --batch 32 --set compile=false eval_interval=1 close_mosaic=1 warmup_epochs=0.5 lr0=0.0001 save_interval_min=8
+ft_n640_lr1e4_6ep_kdx|--preset voc_ft --init yolo26n --epochs 6 --batch 32 --set compile=false eval_interval=1 close_mosaic=1 warmup_epochs=0.5 lr0=0.0001 save_interval_min=8 distill.teacher=/content/ft_x640_voc.pt 'distill.branches=["o2m"]'
+ft_x640_lr1e4_6ep|--preset voc_ft --init yolo26x --epochs 6 --batch 8 --set compile=false eval_interval=1 close_mosaic=1 warmup_epochs=0.5 lr0=0.0001 save_interval_min=8

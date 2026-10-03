@@ -297,6 +297,28 @@ The first attempt was lost when the free VM was reclaimed 19 minutes into a 21-m
 writes a mid-epoch checkpoint every `save_interval_min` minutes. The run above saved one every 8 minutes and the
 session synced each to the local machine (0.94 GB, ~80 s), so a reclaim costs at most ~8 minutes of training.
 
+## Status (paused 2026-10-03) and next steps
+
+Free Colab gave about 1.7–2.5 T4 hours per day, and was then unavailable for about 22 hours. The work was paused with
+these GPU runs queued (`tools/colab/jobs_example.txt`):
+
+| run | state | result so far (AP NMS-free) |
+|---|---|---|
+| s fine-tuned, lr 1e-4, 6 ep (baseline) | **done** | 72.82 (73.49 with NMS) |
+| s + o2m KD from fine-tuned x | VM reclaimed mid-epoch 3; checkpoint kept outside the repo | ep 1/2: 69.54 / 70.82 vs baseline 69.43 / 70.02 (+0.1 / +0.8) |
+| n fine-tuned, lr 1e-4, 6 ep | queued | — (old recipe: 65.97; with KD from s: 66.70) |
+| n + o2m KD from fine-tuned x | queued | — |
+| x fine-tuned, lr 1e-4, 6 ep | queued | — (3 ep: 76.10) |
+
+Expected outcome, from the trends so far:
+
+* KD from the 76-AP x teacher should lift s above 73 AP NMS-free.
+* n should reach ~68–69 AP at 640 px with the new lr.
+* x should gain further from a longer schedule, since its 3-epoch curve was still steep.
+
+Beyond this, the levers left are model-side: the query-based decoders on foundation backbones surveyed in
+`docs/RESEARCH.md`, and stronger pretraining.
+
 ## Reproducing
 
 ```bash
